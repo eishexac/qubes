@@ -1,0 +1,269 @@
+#!/bin/sh
+#
+# ingest - the airlock into dom0 for qubes projects.
+#
+# dom0 has no network, on purpose, and Qubes ships no mechanism for
+# downloading into it; the supported pattern is dom0 *pulling* bytes out
+# of a qube over qvm-run. Salt cannot solve this for itself: the states
+# live in /srv/salt, and getting them there is exactly the problem. So
+# every collection reinvents an install pipe, and none of the existing
+# ones (signed RPMs, signature-checked tarballs) show you WHAT CHANGED
+# before it lands. This script exists for that one step.
+#
+# What a pull does, in order:
+#
+#   1. dom0 pulls ONE project subtree from a qube into a staging
+#      directory. Nothing touches /srv/salt yet.
+#   2. The payload is scanned: regular files and directories only,
+#      portable file names only, and no binaries except the ones the
+#      project declares in <project>/.ingest-binaries.
+#   3. You are shown the full diff against what is currently installed
+#      (first install = everything is new), plus the hash of every
+#      declared binary, old and new.
+#   4. Only after you type "yes" is the tree swapped into
+#      /srv/salt/<project>, and a receipt of what you approved recorded.
+#
+# THREAT MODEL. The qube you pull from is NOT trusted: it can serve any
+# bytes it likes, including a tampered tree or a lying .ingest-binaries.
+# The control is that everything it serves is surfaced to you -- as text
+# in the diff, or as a hash you can compare against a build you made
+# yourself (qubes artifacts build deterministically for exactly this
+# reason). Signatures can prove who wrote a tree; only reading proves you
+# know what is in it. If you approve without reading, no tool can help.
+#
+# BOOTSTRAP, once, by hand -- this script is the only thing you carry in:
+#
+#     qvm-run --pass-io <qube> 'cat /path/to/qubes/dom0/ingest' > ingest
+#     less ingest                      # read all of it; it is not long
+#     sudo install -m 0755 ingest /usr/local/bin/qubes-ingest
+#
+# (dom0's /usr/local is ordinary storage; the template-overlay caveat that
+# applies inside qubes does not apply here.) Updating the script itself
+# goes through its own airlock afterwards: `qubes-ingest pull <qube> dom0`
+# shows you the diff of this file like any other tree, and after approval
+# it tells you the one install command to run.
+#
+# Usage:
+#     qubes-ingest pull <qube> <project> [path-in-qube]   (default: qubes)
+#     qubes-ingest status
+#
+# Exit: 0 done or already current, 1 refused/failed, 2 usage.
+
+set -u
+
+SALT_ROOT="${QUBES_INGEST_SALT_ROOT:-/srv/salt}"
+RECEIPTS="$SALT_ROOT/.ingest-receipts"
+PAGER="${PAGER:-less}"
+# A hostile qube could stream forever; a truncated tar fails to extract,
+# so capping the stream fails closed.
+MAX_BYTES=104857600
+PROG=${0##*/}
+
+if command -v sha256sum >/dev/null 2>&1; then
+	SHA=sha256sum
+else
+	SHA="shasum -a 256"
+fi
+
+die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
+note() { printf '%s: %s\n' "$PROG" "$*" >&2; }
+
+usage() {
+	printf 'usage: %s pull <qube> <project> [path-in-qube]\n' "$PROG" >&2
+	printf '       %s status\n' "$PROG" >&2
+	exit 2
+}
+
+# Everything interpolated into the remote command line is validated
+# against an allowlist first, so the quoting below cannot be escaped.
+check_name() {
+	case "$2" in
+		''|*[!A-Za-z0-9._/-]*) die "$1 '$2' contains characters this tool refuses" ;;
+		-*|*..*) die "$1 '$2' must not start with - or contain .." ;;
+	esac
+}
+
+# The transport is overridable so the pipeline can be tested without a
+# qube; the default is the mechanism Qubes itself documents for moving
+# bytes into dom0.
+fetch() {
+	if [ -n "${QUBES_INGEST_TRANSPORT:-}" ]; then
+		"$QUBES_INGEST_TRANSPORT" "$1" "$2" "$3"
+	else
+		qvm-run --no-gui --pass-io -- "$1" "tar -C $2 -cf - $3"
+	fi
+}
+
+tree_hash() {
+	# shellcheck disable=SC2086 # SHA may be two words (shasum -a 256)
+	(cd "$1" && find . -type f | LC_ALL=C sort | while read -r f; do
+		$SHA "$f"
+	done | $SHA | cut -d' ' -f1)
+}
+
+file_hash() {
+	# shellcheck disable=SC2086
+	$SHA "$1" | cut -d' ' -f1
+}
+
+# git's own heuristic: a NUL in the first chunk means binary.
+is_binary() {
+	od -An -v -tx1 -N 8000 "$1" | tr ' ' '\n' | grep -qx 00
+}
+
+allowlisted() {
+	[ -f "$2/.ingest-binaries" ] || return 1
+	grep -qxF "$1" "$2/.ingest-binaries"
+}
+
+# POSIX sh has no local variables, so every name assigned inside these
+# functions is prefixed: an unprefixed `current=$1` here once clobbered
+# the caller's install target and sent the whole tree into the staging
+# directory the exit trap deletes.
+scan() {
+	s_staged=$1
+	s_bad=$(find "$s_staged" ! -type f ! -type d)
+	[ -z "$s_bad" ] || die "payload holds things that are not plain files or directories:
+$s_bad"
+	find "$s_staged" | LC_ALL=C grep -q '[^A-Za-z0-9._/-]' \
+		&& die "payload holds file names outside A-Za-z0-9._/- ; refusing"
+	# Collected via command substitution, NOT checked inside a pipeline: a
+	# die() on the right of a pipe runs in a subshell and would not stop
+	# the install.
+	s_undeclared=$(find "$s_staged" -type f | while read -r s_f; do
+		s_rel=${s_f#"$s_staged"/}
+		if is_binary "$s_f" && ! allowlisted "$s_rel" "$s_staged"; then
+			printf '%s\n' "$s_rel"
+		fi
+	done)
+	[ -z "$s_undeclared" ] || die "undeclared binary file(s) in the payload:
+$s_undeclared
+A project must list its binaries in .ingest-binaries to have them reviewed by hash."
+}
+
+review() {
+	r_current=$1 r_staged=$2 r_project=$3 r_out=$4
+	{
+		printf '# %s: review of what "yes" will install\n' "$r_project"
+		printf '# staged tree: %s files\n' "$(find "$r_staged" -type f | wc -l | tr -d ' ')"
+		if [ -f "$r_staged/.ingest-binaries" ]; then
+			printf '#\n# declared binaries (verify against your own deterministic build):\n'
+			while read -r r_rel; do
+				[ -n "$r_rel" ] || continue
+				r_old="(absent)"
+				[ -f "$r_current/$r_rel" ] && r_old=$(file_hash "$r_current/$r_rel")
+				r_new="(absent)"
+				[ -f "$r_staged/$r_rel" ] && r_new=$(file_hash "$r_staged/$r_rel")
+				printf '#   %s\n#     installed: %s\n#     staged:    %s\n' \
+					"$r_rel" "$r_old" "$r_new"
+			done < "$r_staged/.ingest-binaries"
+		fi
+		printf '#\n'
+		diff -ruN "$r_current" "$r_staged"
+	} > "$r_out"
+	# diff exits 1 when trees differ; that is the normal case, not an error.
+	return 0
+}
+
+cmd_pull() {
+	[ $# -ge 2 ] || usage
+	qube=$1 project=$2 path=${3:-qubes}
+	check_name qube "$qube"
+	check_name project "$project"
+	check_name path "$path"
+	case "$project" in */*) die "a project is a single directory name" ;; esac
+
+	[ -d "$SALT_ROOT" ] || die "$SALT_ROOT does not exist; is this dom0?"
+	[ -w "$SALT_ROOT" ] || die "$SALT_ROOT is not writable; run with sudo"
+
+	stage=$(mktemp -d) || die "cannot create a staging directory"
+	trap 'rm -rf "$stage"' EXIT INT TERM
+
+	note "pulling $path/$project from $qube (nothing is installed yet)"
+	fetch "$qube" "$path" "$project" | head -c "$MAX_BYTES" > "$stage/payload.tar" \
+		|| die "transfer from $qube failed"
+	tar -xf "$stage/payload.tar" -C "$stage" || die "payload is not a readable tar"
+	rm -f "$stage/payload.tar"
+	[ -d "$stage/$project" ] || die "the qube sent no '$project' directory"
+
+	scan "$stage/$project"
+	chmod -R u=rwX,go=rX "$stage/$project"
+	[ "$(id -u)" = 0 ] && chown -R root:root "$stage/$project"
+
+	current="$SALT_ROOT/$project"
+	basis=$current
+	if [ ! -d "$current" ]; then
+		basis="$stage/.empty"
+		mkdir "$basis"
+	fi
+
+	if diff -rq "$basis" "$stage/$project" >/dev/null 2>&1; then
+		note "$project is already exactly what $qube holds; nothing to do"
+		return 0
+	fi
+
+	review "$basis" "$stage/$project" "$project" "$stage/review"
+	$PAGER "$stage/review"
+
+	printf '\nInstall %s into %s? Type "yes" to proceed: ' "$project" "$SALT_ROOT"
+	answer=""
+	read -r answer || true
+	[ "$answer" = "yes" ] || die "declined; nothing was installed"
+
+	backup=""
+	if [ -d "$current" ]; then
+		backup="$SALT_ROOT/.$project.previous.$$"
+		mv "$current" "$backup" || die "cannot move the old tree aside"
+	fi
+	if ! cp -a "$stage/$project" "$current"; then
+		[ -n "$backup" ] && mv "$backup" "$current"
+		die "install failed; the previous tree was restored"
+	fi
+	[ -n "$backup" ] && rm -rf "$backup"
+
+	mkdir -p "$RECEIPTS"
+	{
+		printf 'project=%s\n' "$project"
+		printf 'date=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+		printf 'source=%s:%s\n' "$qube" "$path"
+		printf 'tree=%s\n' "$(tree_hash "$current")"
+	} > "$RECEIPTS/$project"
+	note "installed $project; receipt written"
+
+	# Self-update through the airlock: `pull <qube> dom0` reviews this very
+	# script like any other tree; if the approved copy differs from the one
+	# running, say so instead of silently staying stale.
+	if [ -f "$current/ingest" ] && [ -f "$0" ] \
+		&& ! diff -q "$current/ingest" "$0" >/dev/null 2>&1; then
+		note "note: the reviewed copy at $current/ingest differs from the one running;"
+		note "      install it with: sudo install -m 0755 $current/ingest $0"
+	fi
+	return 0
+}
+
+cmd_status() {
+	[ -d "$RECEIPTS" ] || { note "no receipts; nothing has been installed by this tool"; return 0; }
+	rc=0
+	for receipt in "$RECEIPTS"/*; do
+		[ -f "$receipt" ] || continue
+		project=${receipt##*/}
+		recorded=$(sed -n 's/^tree=//p' "$receipt")
+		when=$(sed -n 's/^date=//p' "$receipt")
+		if [ ! -d "$SALT_ROOT/$project" ]; then
+			printf '%-16s MISSING (approved %s)\n' "$project" "$when"
+			rc=1
+		elif [ "$(tree_hash "$SALT_ROOT/$project")" = "$recorded" ]; then
+			printf '%-16s ok, as approved %s\n' "$project" "$when"
+		else
+			printf '%-16s MODIFIED since approval on %s\n' "$project" "$when"
+			rc=1
+		fi
+	done
+	return $rc
+}
+
+case "${1:-}" in
+	pull)   shift; cmd_pull "$@" ;;
+	status) cmd_status ;;
+	*)      usage ;;
+esac
