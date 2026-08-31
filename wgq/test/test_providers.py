@@ -106,6 +106,58 @@ class TestUnsupportedCapabilities(unittest.TestCase):
         self.assertIn("does not expose a device list", err.getvalue())
 
 
+class TestForceLogin(unittest.TestCase):
+    """--force-login is an explicit opt-in, taught by the limit error,
+    honoured by IVPN's wire request, and refused loudly by providers that
+    have no such concept instead of silently ignored."""
+
+    SESSION_OK = {
+        "status": 200,
+        "token": "faketoken-0001",
+        "wireguard": {"status": 200, "ip_address": "172.16.5.2"},
+    }
+
+    def _ivpn_capturing(self, sent):
+        provider = IVPN()
+        provider.authenticate("i-ABCD-1234-EFGH")
+
+        def request(method, path, **kw):
+            sent.update(kw.get("json_body") or {})
+            return self.SESSION_OK
+
+        provider._http = SimpleNamespace(
+            request=request, redact=lambda *a, **kw: None
+        )
+        return provider
+
+    def test_default_never_forces(self):
+        sent = {}
+        self._ivpn_capturing(sent).register(KEY)
+        self.assertIs(sent["force"], False)
+
+    def test_force_login_is_sent_when_asked(self):
+        sent = {}
+        address = self._ivpn_capturing(sent).register(KEY, force_login=True)
+        self.assertIs(sent["force"], True)
+        self.assertEqual(address, "172.16.5.2/32")
+
+    def test_mullvad_refuses_rather_than_ignores(self):
+        provider = Mullvad()
+
+        def no_http(*a, **kw):
+            raise AssertionError("the refusal must happen before any request")
+
+        provider._http = SimpleNamespace(request=no_http, redact=lambda *a: None)
+        with self.assertRaises(ProviderError) as ctx:
+            provider.register(KEY, force_login=True)
+        self.assertIn("revoke", str(ctx.exception))
+
+    def test_limit_error_teaches_the_flag(self):
+        with self.assertRaises(DeviceLimitError) as ctx:
+            IVPN._check_status({"status": 602, "message": "limit reached"})
+        self.assertIn("--force-login", str(ctx.exception))
+
+
 class TestIVPNSessionParsing(unittest.TestCase):
     def test_session_limit_maps_to_device_limit_error(self):
         # 602 = CodeSessionsLimitReached in the official client.
