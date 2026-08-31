@@ -121,7 +121,13 @@ class Mullvad(Provider):
             )
         return devices
 
-    def register(self, pubkey: str) -> str:
+    def register(self, pubkey: str, *, force_login: bool = False) -> str:
+        if force_login:
+            raise ProviderError(
+                "mullvad has no forced login. Free a slot with "
+                "'wgq revoke --provider mullvad --pubkey <key>', or move one "
+                "to this key with 'wgq rotate'."
+            )
         require_wg_key(pubkey, "public key")
 
         existing = self.devices()

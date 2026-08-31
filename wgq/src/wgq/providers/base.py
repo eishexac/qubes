@@ -117,7 +117,7 @@ class Provider(abc.ABC):
         """Validate and use *credential*.  Must not persist it anywhere."""
 
     @abc.abstractmethod
-    def register(self, pubkey: str) -> str:
+    def register(self, pubkey: str, *, force_login: bool = False) -> str:
         """Register *pubkey* and return the assigned address as ``a.b.c.d/32``.
 
         Idempotent wherever the provider's API allows it: registering a key
@@ -126,6 +126,13 @@ class Provider(abc.ABC):
         whose API cannot offer that (IVPN's session-based registration)
         must say so in its docstring and fail loudly at the limit instead
         of burning slots silently.
+
+        ``force_login`` is the explicit opt-in to make room by logging the
+        account's other devices out as part of this registration (IVPN's
+        ``force`` field).  Never a default anywhere.  A provider without
+        the concept must refuse loudly when it is set -- silently ignoring
+        a flag that promises destructive behaviour would be worse than not
+        having it.
         """
 
     @abc.abstractmethod

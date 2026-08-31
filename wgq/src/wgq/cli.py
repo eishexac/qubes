@@ -165,7 +165,7 @@ def cmd_provision(args: argparse.Namespace) -> int:
             "A silently ignored rename would leave a peer under a name you did not expect."
         )
 
-    address = provider.register(pubkey)
+    address = provider.register(pubkey, force_login=args.force_login)
 
     # Build and validate every peer before writing any of them.
     peers = []
@@ -688,6 +688,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="store SERVER under a shorter peer name; repeatable",
     )
     p.add_argument("--port", type=int, help="override the endpoint port")
+    p.add_argument(
+        "--force-login", action="store_true",
+        help="(ivpn) make room by logging your OTHER IVPN devices out as part "
+        "of this login; never the default, and refused by providers that "
+        "offer proper revocation instead",
+    )
     p.set_defaults(func=cmd_provision)
 
     peer = sub.add_parser(

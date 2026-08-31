@@ -79,13 +79,13 @@ class IVPN(Provider):
         self._http.redact(account)
         self._account = account
 
-    def register(self, pubkey: str) -> str:
+    def register(self, pubkey: str, *, force_login: bool = False) -> str:
         require_wg_key(pubkey, "public key")
         if not self._account:
             raise AuthError("not authenticated; call authenticate() first")
 
-        # force=false matches the official client's default: never silently
-        # log another device out to make room for this one.
+        # force defaults to false, matching the official client: kicking the
+        # account's other devices out is only ever an explicit --force-login.
         payload = require_mapping(
             self._http.request(
                 "POST",
@@ -93,7 +93,7 @@ class IVPN(Provider):
                 json_body={
                     "username": self._account,
                     "wg_public_key": pubkey,
-                    "force": False,
+                    "force": bool(force_login),
                 },
                 expect=(200, 201),
             ),
@@ -120,8 +120,11 @@ class IVPN(Provider):
             raise DeviceLimitError(
                 f"IVPN session limit reached: {message}\n"
                 "Every provisioning run opens a session, and accounts hold 2 "
-                "(Standard) or 7 (Pro). Log a device out in the IVPN app or at "
-                "ivpn.net, then run this again."
+                "(Standard) or 7 (Pro). Two ways out:\n"
+                "  - log a device out in the IVPN app or at ivpn.net, then "
+                "run this again, or\n"
+                "  - re-run with --force-login to log your OTHER IVPN devices "
+                "out as part of this login."
             )
         if status in (_STATUS_UNAUTHORIZED, _STATUS_SESSION_NOT_FOUND):
             raise AuthError(f"IVPN rejected the account credential: {message}")
