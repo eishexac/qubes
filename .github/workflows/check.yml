@@ -14,6 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history and tags: the release gate below diffs against each
+          # project's latest release tag.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
@@ -55,3 +59,37 @@ jobs:
             exit 1
           fi
           echo "clean"
+
+      # Releases stay human: only a signed tag pushed by the maintainer cuts
+      # one (release.yml), because the signature is the trust root and CI
+      # must never hold the key. What CI enforces instead, per project:
+      # shipped bytes may not change under an already-released version
+      # (deterministic builds make version <-> artifact a one-to-one
+      # promise), and a bumped, unreleased version earns a reminder --
+      # while projects without a first release, and repo-level churn,
+      # stay silent. Shipped merges accumulate under one pending version
+      # until the maintainer decides to tag.
+      - name: Shipped changes require a version bump; pending versions get a nudge
+        run: |
+          rc=0
+          for makefile in */Makefile; do
+            p=${makefile%/Makefile}
+            tag=$(git tag -l "$p-v*" --sort=-v:refname | head -1)
+            if [ -z "$tag" ]; then
+              echo "$p: no release tag yet; gate idle"
+              continue
+            fi
+            ver=$(make -s -C "$p" version)
+            # tools/ is included: shared build helpers change artifact bytes.
+            if git diff --quiet "$tag" HEAD -- "$p" tools; then
+              echo "$p: no shipped changes since $tag"
+              continue
+            fi
+            if [ "$p-v$ver" = "$tag" ]; then
+              echo "::error::$p changed since $tag but its version is still $ver; bump it in this change"
+              rc=1
+            else
+              echo "::notice::$p $ver carries shipped changes and no release yet. When ready: git tag -s $p-v$ver && git push origin $p-v$ver"
+            fi
+          done
+          exit $rc
