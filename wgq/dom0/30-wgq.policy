@@ -1,0 +1,51 @@
+## /etc/qubes/policy.d/30-wgq.policy
+##
+## Read this file before you copy it into dom0.  Together with the Salt
+## formula it is the entire dom0 footprint of this project: no installer,
+## no binaries, no scripts.
+##
+## What these two lines do
+## -----------------------
+## They let the wgq-mgmt qube read and replace the *outbound firewall rules*
+## of any qube tagged `wgq-zone` (the Salt formula applies that tag to each
+## sys-vpn-<zone> it creates, and to nothing else).
+##
+## That firewall is the layer that actually protects you.  It is enforced by
+## the VPN qube's net qube, so it holds even if the VPN qube is compromised,
+## and it fails closed when the firewall service is not running.  Handing a
+## qube the ability to rewrite it is not a small grant, which is why the
+## default below is `ask`.
+##
+## admin.vm.firewall.Set replaces the whole rule list in one call and Qubes
+## reloads it automatically, so there is no window in which a partial rule
+## set is live.  That is why this is safer than the qvm-firewall command
+## sequence it replaces, not merely more convenient.
+##
+## ask vs allow
+## ------------
+##   ask    - every change raises a confirmation prompt in dom0 showing the
+##            source qube and the target.  You still approve the security
+##            boundary; you just stop transcribing IP addresses by hand.
+##            This is the default and the recommendation.
+##
+##   allow  - unattended.  Choose this only if you accept that a compromised
+##            wgq-mgmt can then silently rewrite the endpoint allowlist of
+##            every VPN qube, i.e. can switch off the protection described
+##            above.  wgq-mgmt reaches the network through sys-firewall and
+##            runs an HTTP client against your VPN provider, so it is not a
+##            qube with no attack surface.
+##
+## The grant is narrow either way: admin.vm.firewall.* cannot create qubes,
+## change a netvm, attach devices, or read anything else.
+##
+## Installing
+## ----------
+##   1. Read the two lines below.
+##   2. sudo cp 30-wgq.policy /etc/qubes/policy.d/30-wgq.policy
+##   3. qvm-tags sys-vpn-work list          # confirm the tag is where you think
+##
+## To revoke, delete the file.  `wgq firewall` then falls back to printing a
+## qvm-firewall command block for you to paste, and nothing else changes.
+
+admin.vm.firewall.Get  *  wgq-mgmt  @tag:wgq-zone  allow  target=dom0
+admin.vm.firewall.Set  *  wgq-mgmt  @tag:wgq-zone  ask    target=dom0

@@ -1,0 +1,137 @@
+#!/bin/sh
+#
+# wg-tunnel - bring this qube's WireGuard tunnel up or down.
+#
+# The active peer is whatever /rw/config/wg/wg0.conf points at.  Pinning the
+# interface name to wg0 (rather than letting wg-quick derive it from a
+# per-peer file name) is what lets the firewall rules name the tunnel
+# statically; see 50-wgq.
+#
+# Exits 0 when this qube has no tunnel configured, so that qubes sharing the
+# template but not acting as VPN qubes no-op instead of failing at boot.
+#
+# Driven by wg-tunnel.service.  Safe to run by hand as root.
+
+set -eu
+
+WG_DIR=/rw/config/wg
+LINK="$WG_DIR/wg0.conf"
+TUN=wg0
+FW_SCRIPT=/etc/qubes/qubes-firewall.d/50-wgq
+PROG=${0##*/}
+
+die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
+info() { printf '%s: %s\n' "$PROG" "$*" >&2; }
+
+need_root() {
+	[ "$(id -u)" -eq 0 ] || die "must run as root"
+}
+
+# True when this qube is configured as a VPN qube at all.
+configured() {
+	[ -d "$WG_DIR" ] && [ -L "$LINK" ]
+}
+
+# Refuse to bring up a config that is not ready, rather than letting
+# wg-quick fail somewhere less legible.
+check_config() {
+	[ -e "$LINK" ] || die "$LINK is a dangling symlink"
+
+	if grep -q '__PRIVATE_KEY__' "$LINK"; then
+		die "$LINK still holds the __PRIVATE_KEY__ placeholder; run 'wgq apply'"
+	fi
+
+	# wg-quick only warns about a world-readable config, so enforce it here.
+	mode=$(stat -Lc '%a' "$LINK")
+	case "$mode" in
+		600|400) ;;
+		*) die "$(readlink -f "$LINK") is mode $mode; must be 600" ;;
+	esac
+}
+
+is_up() {
+	ip link show "$TUN" >/dev/null 2>&1
+}
+
+# Stale conntrack entries can carry a pre-existing flow past the firewall
+# rules via the qubes-accel flowtable, and can also pin traffic to an exit
+# that no longer exists after a peer switch.
+flush_conntrack() {
+	conntrack -F >/dev/null 2>&1 \
+		|| info "conntrack flush failed; established flows may persist"
+}
+
+# Re-assert the firewall rules against the peer that is actually active.
+# The script is idempotent and reads the same symlink wg-quick uses.  Its
+# failure is deliberately not fatal here: on failure it has already switched
+# forwarding off itself, so clients get nothing (the safe state), and
+# failing this unit over it would leave systemd's picture of the tunnel out
+# of step with the interface that is genuinely up.
+run_fw() {
+	if [ -x "$FW_SCRIPT" ]; then
+		"$FW_SCRIPT" || info "$FW_SCRIPT failed and switched forwarding off; clients get nothing until it succeeds (see 'wg-tunnel status')"
+	fi
+}
+
+cmd_up() {
+	need_root
+	if ! configured; then
+		info "no tunnel configured in $WG_DIR; nothing to do"
+		return 0
+	fi
+	if is_up; then
+		info "$TUN is already up"
+		run_fw
+		return 0
+	fi
+	command -v wg-quick >/dev/null 2>&1 || die "wg-quick is not installed"
+	check_config
+
+	wg-quick up "$LINK"
+	flush_conntrack
+	run_fw
+}
+
+cmd_down() {
+	need_root
+	configured || return 0
+	if is_up; then
+		wg-quick down "$LINK"
+		flush_conntrack
+	else
+		info "$TUN is not up"
+	fi
+}
+
+cmd_status() {
+	if ! configured; then
+		echo "not configured as a VPN qube"
+		return 0
+	fi
+
+	peer=$(readlink "$LINK" 2>/dev/null || true)
+	peer=${peer##*/}
+	printf 'peer:     %s\n' "${peer%.conf}"
+
+	if [ -r /run/wgq/state ]; then
+		printf 'firewall: %s\n' "$(cat /run/wgq/state)"
+	else
+		printf 'firewall: unknown (50-wgq has not run)\n'
+	fi
+
+	if is_up; then
+		printf 'tunnel:   up\n\n'
+		wg show "$TUN"
+	else
+		printf 'tunnel:   DOWN\n'
+		return 1
+	fi
+}
+
+case "${1:-}" in
+	up)      cmd_up ;;
+	down)    cmd_down ;;
+	restart) cmd_down; cmd_up ;;
+	status)  cmd_status ;;
+	*)       printf 'usage: %s {up|down|restart|status}\n' "$PROG" >&2; exit 2 ;;
+esac

@@ -1,0 +1,17 @@
+[Unit]
+# No Documentation= line: systemd-analyze verify tries to resolve man: URIs
+# and minimal templates ship no man pages.
+Description=WireGuard tunnel for this qube
+After=network-online.target qubes-misc-post.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/wg-tunnel up
+ExecStop=/usr/sbin/wg-tunnel down
+
+[Install]
+# Enable this in the TEMPLATE, not in the qube: /etc is restored from the
+# template on every AppVM boot, so `systemctl enable` inside a qube is lost.
+WantedBy=multi-user.target

@@ -1,0 +1,89 @@
+# Releases, per project.
+#
+# Tags are namespaced <project>-vX.Y.Z; this workflow covers wgq. The
+# source is the distribution; a release is a signed tag plus, as a
+# convenience, the same dist/wgq that `make` gives anyone. Because the
+# build is deterministic, nobody has to trust this workflow or its runner:
+# the published SHA256SUMS is checkable by rebuilding from the tag.
+#
+# Flow: the maintainer signs and pushes a tag (git tag -s wgq-v0.1.0 &&
+# git push origin wgq-v0.1.0). This workflow runs the full checks, proves
+# the build reproduces, confirms the tag matches `wgq --version`, and
+# opens a DRAFT release -- a human presses publish. workflow_dispatch runs
+# the same steps as a dry run without creating anything.
+
+name: release
+
+on:
+  push:
+    tags: ["wgq-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          # Matches the interpreter Debian 13 (the target template) ships.
+          python-version: "3.13"
+
+      - name: Install linters
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          python -m pip install --quiet pyyaml jinja2
+
+      - name: make check
+        run: make check
+
+      - name: Build twice; the hashes must match
+        run: |
+          make -C wgq build
+          (cd wgq/dist && sha256sum wgq) > SHA256SUMS
+          rm -rf wgq/dist
+          make -C wgq build
+          (cd wgq/dist && sha256sum -c ../../SHA256SUMS)
+          cat SHA256SUMS
+
+      - name: The tag must match what the tool says it is
+        if: github.ref_type == 'tag'
+        run: |
+          v=$(./wgq/dist/wgq --version | awk '{print $2}')
+          if [ "wgq-v$v" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag is $GITHUB_REF_NAME but wgq --version says $v"
+            exit 1
+          fi
+
+      - name: Draft the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#wgq-}"
+          {
+            echo "Source is the distribution: clone it, read wgq/, run \`make\`."
+            echo
+            echo "The attached \`wgq\` is the same zipapp \`make\` produces, for"
+            echo "convenience only. The build is deterministic, so check it instead"
+            echo "of trusting it:"
+            echo
+            echo '    git verify-tag '"$GITHUB_REF_NAME"
+            echo '    git checkout '"$GITHUB_REF_NAME"
+            echo '    make -C wgq && sha256sum wgq/dist/wgq   # must equal SHA256SUMS'
+            echo
+            echo "The artifact is a readable zip of the Python source:"
+            echo
+            echo '    unzip -p wgq wgq/fwrules.py'
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --verify-tag \
+            --title "wgq $v" \
+            --notes-file notes.md \
+            wgq/dist/wgq SHA256SUMS

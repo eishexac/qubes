@@ -1,0 +1,205 @@
+#!/bin/sh
+#
+# /etc/qubes/qubes-firewall.d/50-wgq
+#
+# Installed from the wgq template.  Runs as root on every qubes-firewall
+# start, in every qube built from that template.
+#
+# Why this directory and not /rw/config/qubes-firewall-user-script:
+# qubesagent/firewall.py runs the .d directory unconditionally, but skips
+# the user script entirely when the custom-persist service is enabled.  A
+# leak control that silently does not run is worse than none.
+#
+# Why failure is not signalled by exit status: Qubes invokes us with
+# subprocess.call() and discards the return value.  Nothing reads it,
+# nothing logs it.  So failure is expressed in the dataplane instead - if
+# we cannot prove the rules landed, this qube stops forwarding at all.
+#
+# Nothing here is meant to be edited by hand.  The active peer is whatever
+# /rw/config/wg/wg0.conf points at, and that peer's .meta file carries the
+# resolver.  Both are written by `wgq`.
+
+set -u
+
+WG_DIR=/rw/config/wg
+LINK="$WG_DIR/wg0.conf"
+TUN=wg0
+RUN_DIR=/run/wgq
+STATE="$RUN_DIR/state"
+
+note() { logger -t wgq-firewall -p daemon.notice -- "$*"; }
+warn() { logger -t wgq-firewall -p daemon.err    -- "$*"; }
+
+# Only VPN qubes have /rw/config/wg.  sys-fw-<zone> and ordinary AppVMs on
+# this template fall out here - which is the whole reason these rules can
+# ship in the template at all.
+[ -d "$WG_DIR" ] || exit 0
+
+mkdir -p "$RUN_DIR" || warn "cannot create $RUN_DIR; state will go unrecorded"
+
+panic() {
+	warn "FAILED: $* -- disabling forwarding"
+	printf 'broken: %s\n' "$*" > "$STATE"
+	sysctl -qw net.ipv4.ip_forward=0 2>/dev/null
+	sysctl -qw net.ipv6.conf.all.forwarding=0 2>/dev/null
+	# The sysctl gates the forward path, but a flow already offloaded into
+	# the qubes-accel flowtable re-enters at the ingress hook and never
+	# consults it (DESIGN.md section 4). Its conntrack entry is what keeps
+	# it alive, so those must die too or the shutoff is incomplete.
+	conntrack -F >/dev/null 2>&1
+	exit 1
+}
+
+is_ipv4() {
+	case "$1" in
+		''|*[!0-9.]*) return 1 ;;
+	esac
+	# Split on dots via IFS rather than a subshell. The expansion happens
+	# before set runs, so reading $1 here is safe.
+	oldifs=$IFS
+	IFS=.
+	# shellcheck disable=SC2086 # deliberate word splitting on IFS
+	set -- $1
+	IFS=$oldifs
+	[ $# -eq 4 ] || return 1
+	for octet in "$@"; do
+		[ -n "$octet" ] || return 1
+		[ "$octet" -le 255 ] 2>/dev/null || return 1
+	done
+	return 0
+}
+
+# ---------------------------------------------------------------------------
+# Refuse to install rules into chains that do not exist or that nothing
+# jumps to.  Rules in an orphaned chain look like success and protect
+# nothing, which is the exact silent failure this project exists to avoid.
+# ---------------------------------------------------------------------------
+
+nft list chain ip  qubes custom-forward >/dev/null 2>&1 \
+	|| panic "no 'ip qubes custom-forward' chain"
+nft list chain ip6 qubes custom-forward >/dev/null 2>&1 \
+	|| panic "no 'ip6 qubes custom-forward' chain"
+
+# Qubes reserves the custom-* chains and states in qubes-ipv4.nft that it
+# will never modify them, so flushing is safe - and necessary, because we
+# are re-run whenever the upstream resolver changes.
+nft flush chain ip  qubes custom-forward || panic "flush ip custom-forward"
+nft flush chain ip6 qubes custom-forward || panic "flush ip6 custom-forward"
+
+# ---------------------------------------------------------------------------
+# Kill switch.  Installed before anything else, so that a broken resolver
+# further down can never leave this undone.
+#
+# Never use 'accept' in custom-forward.  The qubes forward chain jumps here
+# first, and an accept terminates the whole base chain - skipping its
+# trailing 'oifgroup 2 counter drop', which is what keeps unsolicited
+# inbound off the client qubes.  Drops and non-terminal statements only.
+#
+# group 1 is the Qubes-managed uplink (network/setup-ip), group 2 is a
+# downstream vif (network/vif-route-qubes).  Matching on the group rather
+# than on eth0/vif* means a second uplink or a renamed interface fails
+# closed instead of slipping through.
+# ---------------------------------------------------------------------------
+
+nft add rule ip qubes custom-forward \
+	oifgroup != 2 oifname != "$TUN" counter drop \
+	|| panic "install IPv4 kill switch"
+
+# wgq is IPv4-only by design, so nothing at all may be forwarded over v6.
+nft add rule ip6 qubes custom-forward counter drop \
+	|| panic "install IPv6 kill switch"
+
+# Unqualified on purpose: it only ever sees what survived the drop above,
+# i.e. tunnel-bound traffic.  Keep it after the drop.
+nft add rule ip qubes custom-forward \
+	tcp flags syn / syn,rst tcp option maxseg size set rt mtu \
+	|| panic "install MSS clamp"
+
+# Read the rules back.  Trust the dataplane, not the return codes.
+nft list chain ip qubes custom-forward | grep -q "oifname != \"$TUN\"" \
+	|| panic "IPv4 kill switch did not land"
+nft list chain ip6 qubes custom-forward | grep -q 'drop' \
+	|| panic "IPv6 kill switch did not land"
+
+# ---------------------------------------------------------------------------
+# Pin client DNS.
+#
+# Qubes' own dnat-dns chain sits at 'hook prerouting priority dstnat'
+# (-100).  A second chain at the same priority would tie, and netfilter
+# commits whichever DNAT it evaluates first.  When Qubes wins, the rewrite
+# is a no-op (its idea of "our resolver" is the same 10.139.1.1 it hands
+# downstream) and the query goes into the tunnel addressed to an address
+# that exists nowhere - a black hole, on a coin flip.  -150 outranks it.
+# ---------------------------------------------------------------------------
+
+peer=''
+target=$(readlink "$LINK" 2>/dev/null) || target=''
+if [ -n "$target" ]; then
+	base=${target##*/}
+	base=${base%.conf}
+	case "$base" in
+		''|.|..|*[!A-Za-z0-9_=+.-]*)
+			warn "refusing peer name '$base' from $LINK" ;;
+		*)
+			peer=$base ;;
+	esac
+fi
+
+dns=''
+if [ -n "$peer" ] && [ -f "$WG_DIR/peers/$peer.meta" ]; then
+	dns=$(sed -n 's/^dns=\(.*\)$/\1/p' "$WG_DIR/peers/$peer.meta" \
+		| head -n 1 | tr -d '[:space:]')
+	is_ipv4 "$dns" || { warn "peer '$peer' has an unusable resolver: '$dns'"; dns=''; }
+fi
+
+nft add chain ip qubes wgq-dns \
+	'{ type nat hook prerouting priority -150; policy accept; }' \
+	|| panic "create wgq-dns chain"
+nft flush chain ip qubes wgq-dns || panic "flush wgq-dns"
+
+if [ -n "$dns" ]; then
+	nft add rule ip qubes wgq-dns iifgroup 2 udp dport 53 dnat to "$dns" \
+		|| panic "pin UDP DNS"
+	nft add rule ip qubes wgq-dns iifgroup 2 tcp dport 53 dnat to "$dns" \
+		|| panic "pin TCP DNS"
+	printf 'ok peer=%s dns=%s\n' "$peer" "$dns" > "$STATE"
+else
+	# No resolver we can vouch for.  Drop client DNS rather than let it
+	# fall through to Qubes' chain and black-hole in the tunnel.  Borrowed
+	# from qubes-setup-dnat-to-ns, which does the same when the qube has
+	# no IPv4 resolver at all.
+	warn "no resolver for peer '${peer:-none}' -- dropping client DNS"
+	nft add rule ip qubes wgq-dns iifgroup 2 udp dport 53 counter drop \
+		|| panic "drop UDP DNS"
+	nft add rule ip qubes wgq-dns iifgroup 2 tcp dport 53 counter drop \
+		|| panic "drop TCP DNS"
+	printf 'degraded: no resolver for peer=%s; client DNS dropped\n' \
+		"${peer:-none}" > "$STATE"
+fi
+
+# Same standard as the kill switch: trust what reads back, not return codes.
+# Both branches above put a dport 53 rule in the chain, so its absence means
+# the DNS pin silently did not land.
+nft list chain ip qubes wgq-dns | grep -q 'dport 53' \
+	|| panic "DNS rules did not land"
+
+# ---------------------------------------------------------------------------
+# Flows already offloaded into the qubes-accel flowtable re-enter at the
+# ingress hook and never traverse the forward hook again, so they would
+# keep flowing past everything above.  Flowtable entries are bound to
+# conntrack entries and die with them.
+# ---------------------------------------------------------------------------
+
+# A previous run may have panicked and switched forwarding off, and nothing
+# else ever switches it back on while the qube runs (boot-time network setup
+# is once-only). Everything above has now been installed and read back, so
+# re-enable it; without this line, one transient failure would wedge the
+# qube until reboot while the state file claimed 'ok'. Only qubes with
+# /rw/config/wg reach this far, and IPv6 forwarding stays off: wgq is
+# IPv4-only and the v6 chain above drops everything anyway.
+sysctl -qw net.ipv4.ip_forward=1 || panic "re-enable IPv4 forwarding"
+
+conntrack -F >/dev/null 2>&1 \
+	|| warn "conntrack flush failed -- flows established before these rules may persist"
+
+note "applied: tunnel=$TUN peer=${peer:-none} resolver=${dns:-none}"

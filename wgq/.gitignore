@@ -1,0 +1,15 @@
+# Built artifact. Reproduce with `make`.
+/dist/
+
+__pycache__/
+*.pyc
+
+# Never commit anything that has touched key material or an account
+# credential. wgq writes peer bundles under ~/.local/share/wgq by default,
+# but these guard against a stray copy inside the tree.
+*.conf
+!template/**/*.conf
+*.key
+*-account
+/out/
+/zones/
