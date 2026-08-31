@@ -81,6 +81,31 @@ class TestIVPNAccountIds(unittest.TestCase):
                 self.assertFalse(IVPN_ACCOUNT_RE.match(bad))
 
 
+class TestUnsupportedCapabilities(unittest.TestCase):
+    def test_missing_provider_feature_is_one_line_not_a_traceback(self):
+        # IVPN has no device list; the CLI must say so cleanly. IVPN's
+        # authenticate() is offline (format check only), so this runs
+        # without network.
+        import io
+        import tempfile
+        from contextlib import redirect_stderr, redirect_stdout
+        from pathlib import Path
+
+        from wgq import cli
+
+        with tempfile.TemporaryDirectory() as tmp:
+            account = Path(tmp) / "ivpn-account"
+            account.write_text("i-ABCD-1234-EFGH\n", encoding="ascii")
+            account.chmod(0o600)
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                code = cli.main(
+                    ["devices", "--provider", "ivpn", "--account-file", str(account)]
+                )
+        self.assertEqual(code, 1)
+        self.assertIn("does not expose a device list", err.getvalue())
+
+
 class TestIVPNSessionParsing(unittest.TestCase):
     def test_session_limit_maps_to_device_limit_error(self):
         # 602 = CodeSessionsLimitReached in the official client.
