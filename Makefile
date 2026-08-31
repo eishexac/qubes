@@ -17,8 +17,8 @@ PYTHON ?= python3
 
 PROJECTS := $(patsubst %/Makefile,%,$(wildcard */Makefile))
 
-# strip, or two empty wildcards leave a lone space that reads as non-empty.
-SELF_SHELL := $(strip $(wildcard dom0/ingest) $(wildcard test/*.sh))
+# strip, or empty wildcards leave a lone space that reads as non-empty.
+SELF_SHELL := $(strip $(wildcard bootstrap.sh) $(wildcard dom0/ingest) $(wildcard test/*.sh))
 
 .PHONY: all build check verify clean self-check
 
@@ -53,4 +53,4 @@ self-check:
 			printf 'shellcheck NOT INSTALLED - top-level shell unlinted\n'; \
 		fi; \
 	fi
-	@if [ -f test/test_ingest.sh ]; then sh test/test_ingest.sh || exit 1; fi
+	@for t in $(wildcard test/*.sh); do sh "$$t" || exit 1; done
