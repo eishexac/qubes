@@ -141,6 +141,12 @@ behind it have no effect.
 Read every file before it enters dom0. There are three, and they are all
 text: two Salt states and two lines of qrexec policy.
 
+The short path: run `sh bootstrap.sh wgq` at the repository root (ideally
+in a disposable — see the collection README), then `qubes-ingest pull` and
+`qubes-ingest apply wgq` in dom0. The steps below are the manual
+equivalent, and exactly what `apply` runs for you, one confirmed step at a
+time.
+
 ```sh
 # the whole collection, or sparse-checkout just this project -- see the
 # repository README; wgq/ is self-contained either way

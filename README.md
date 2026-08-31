@@ -53,27 +53,46 @@ only the one project's subtree ever enters dom0.
 dom0 has no network, on purpose. Files get in by dom0 *pulling* them from
 a qube that holds this repository — never the other way around.
 
-**Manual, per project** (works today, no tooling):
+**Disposable install (recommended).** Open a terminal in a networked
+DispVM, then:
+
+```sh
+git clone https://github.com/eishexac/qubes.git ~/qubes
+cd ~/qubes && sh bootstrap.sh          # or: sh bootstrap.sh <project>
+```
+
+It checks dependencies, runs the project's tests, proves the build
+reproduces, and prints the exact dom0 commands — with the disposable's
+real name and path filled in — to bootstrap the ingest tool (first time
+only), pull, and apply. Close the DispVM afterwards; nothing about the
+fetch or build persists. The dom0 lines stay typed by hand and reviewed:
+that is the security model, not friction left in by accident.
+
+**The ingest tool** (`dom0/ingest`) is the airlock those commands go
+through: `pull` stages the subtree, scans it (plain files, portable names,
+no undeclared binaries), and **diffs it against what is currently
+installed** before anything reaches `/srv/salt` — updates are as auditable
+as first installs, and approving a change means you just read exactly that
+change. `apply` then walks the project's declared install plan — a fixed
+verb set interpreted by the reviewed script, never shell from the payload
+— one confirmed step at a time, refusing any tree that drifted from its
+approval receipt. See the script's header for the full threat model.
+
+**Manual, per project** (no tooling at all):
 
 ```sh
 # in dom0 — pulls ONLY the wgq subtree
 qvm-run --pass-io <qube> 'tar -C /path/to/qubes -c wgq' | sudo tar -C /srv/salt -x
 ```
 
-Then read every file it landed, as that project's README instructs.
-
-**With the ingest tool** (`dom0/ingest`): the same pull, but staged,
-scanned, and **diffed against what is currently installed** before
-anything reaches `/srv/salt` — so updates are as auditable as first
-installs, and approving a change means you just read exactly that change.
-See the header of [`dom0/ingest`](dom0/ingest) for its threat model and
-the one-time bootstrap.
+Then read every file it landed and follow that project's README by hand.
 
 ## Layout
 
 ```
 qubes/
-├── dom0/ingest          the airlock: pull, scan, diff, approve, install
+├── bootstrap.sh         qube side: clone → checks → printed dom0 steps
+├── dom0/ingest          the airlock: pull, scan, diff, approve, apply
 ├── tools/               shared build helpers (deterministic zipapp)
 ├── test/                tests for the shared tooling
 ├── wgq/                 project: WireGuard proxy qubes
