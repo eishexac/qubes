@@ -34,9 +34,14 @@ SHELL_SCRIPTS := \
 	template/usr/sbin/wg-tunnel \
 	test/verify.sh
 
-.PHONY: all build check verify check-salt clean install
+.PHONY: all build check verify check-salt clean install version
 
 all: build
+
+# One line, nothing else: the collection's release tooling asks every
+# project its version this way (tags are <project>-v<this>).
+version:
+	@$(PYTHON) -c 'import sys; sys.path.insert(0, "src"); import wgq; print(wgq.__version__)'
 
 build: $(DIST)
 

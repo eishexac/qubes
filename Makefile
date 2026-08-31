@@ -8,6 +8,8 @@
 #     verify   prove its built artifact behaves (determinism and the like)
 #     build    produce its artifacts
 #     clean    remove them
+#     version  print the project's version, one line -- release tags are
+#              <project>-v<version>, and CI matches them against this
 #
 # `check` also covers the shared tooling in this directory: the ingest
 # script is linted and exercised here because it belongs to the
