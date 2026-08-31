@@ -43,7 +43,7 @@ channels are independent on purpose:
 
 ```sh
 # the maintainer's site
-curl -sS https://existin.space/keys/gpg/eishexac.asc | gpg --import
+curl -sS https://existin.space/keys/openpgp/eishexac.asc | gpg --import
 # or via WKD
 gpg --locate-keys hexac@existin.space
 # or the copy in this repository (weakest alone; cross-check it)
