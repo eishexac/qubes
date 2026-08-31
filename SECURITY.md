@@ -28,6 +28,42 @@ Two things are in scope for the repository as a whole:
 - **Anything that moves key material or credentials** into a log, an error
   message, a Salt state, or a qube that should never hold it.
 
+## Verifying releases
+
+Release tags (`<project>-vX.Y.Z`) are signed with this key, and only this
+key:
+
+```
+eishexac <hexac@existin.space>
+B387 26F0 61C1 AE22 E287  5F90 57ED 9D12 966B 397C
+```
+
+Fetch it from more than one channel and compare the fingerprint — the
+channels are independent on purpose:
+
+```sh
+# the maintainer's site
+curl -sS https://existin.space/keys/gpg/eishexac.asc | gpg --import
+# or via WKD
+gpg --locate-keys hexac@existin.space
+# or the copy in this repository (weakest alone; cross-check it)
+gpg --import KEY.asc
+
+gpg --fingerprint hexac@existin.space   # must match the block above, and
+                                        # the key on github.com/eishexac
+```
+
+Then:
+
+```sh
+git verify-tag wgq-v0.1.0
+```
+
+Artifacts attached to a release are conveniences. The builds are
+deterministic, so rebuild from the verified tag and compare instead of
+trusting a download: `make -C <project> && sha256sum <project>/dist/*`
+must equal the release's `SHA256SUMS`.
+
 ## Status
 
 Nothing in this repository has been audited, and each project's README
