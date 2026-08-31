@@ -109,6 +109,16 @@ make verify    # every project's artifact verification (determinism etc.)
 CI runs both on every push and pull request, and nothing merges without
 them.
 
+## Releases
+
+Per project: tags are `<project>-vX.Y.Z`, signed by the maintainer's key —
+fingerprint and the full verification ritual in
+[SECURITY.md](SECURITY.md), key served from
+[existin.space](https://existin.space/keys/gpg/eishexac.asc) and by WKD. A
+release never fires for a project whose code did not change, and attached
+artifacts are deterministic-build conveniences: verify the tag, rebuild,
+compare — do not trust downloads.
+
 ## License
 
 GPL-2.0 (see [LICENSE](LICENSE)), for the whole repository.
