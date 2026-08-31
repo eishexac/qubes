@@ -798,6 +798,12 @@ def main(argv: list[str] | None = None) -> int:
     except WgqError as exc:
         print(f"wgq: {exc}", file=sys.stderr)
         return 1
+    except NotImplementedError as exc:
+        # Optional provider capabilities (devices, revoke, rotate, account)
+        # raise this with a message naming the provider; the promise in
+        # providers/base.py is that it surfaces as one line, not a traceback.
+        print(f"wgq: {exc}", file=sys.stderr)
+        return 1
     except (OSError, UnicodeDecodeError) as exc:
         # Filesystem and encoding surprises (missing file, permission
         # denied, a credential file with a stray byte) get one readable
