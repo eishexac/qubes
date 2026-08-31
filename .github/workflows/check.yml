@@ -1,0 +1,57 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          # Matches the interpreter Debian 13 (the target template) ships.
+          python-version: "3.13"
+
+      # Optional locally, mandatory here: nothing merges unlinted or with
+      # an unparsed Salt state.
+      - name: Install linters
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          python -m pip install --quiet pyyaml jinja2
+
+      - name: Confirm the linters are actually present
+        run: |
+          command -v shellcheck
+          python -c 'import yaml, jinja2'
+
+      - name: make check
+        run: make check
+
+      - name: make verify
+        run: make verify
+
+      - name: No key material or account numbers in the tree
+        run: |
+          # Config templates named *peers.py* and test fixtures may carry
+          # PrivateKey lines (placeholder or the published dummy key);
+          # nothing else may.
+          if git grep -nE 'PrivateKey[[:space:]]*=' -- . \
+              | grep -v '__PRIVATE_KEY__' \
+              | grep -vE '/peers\.py:|(^|/)test/'; then
+            echo "::error::a PrivateKey assignment outside a template or tests"
+            exit 1
+          fi
+          if git grep -nE '\b[0-9]{16}\b' -- . ; then
+            echo "::error::a 16-digit run that could be an account number"
+            exit 1
+          fi
+          echo "clean"
