@@ -20,9 +20,9 @@ class SaltDict(dict):
         raise KeyError(k)
 
 targets = {
-    "salt/wg-template.sls": ["dom0", "wgq-debian-13"],
-    "salt/wg-qubes.sls": ["dom0"],
-    "salt/top.sls": ["dom0"],
+    "wg-template.sls": ["dom0", "wgq-debian-13"],
+    "wg-qubes.sls": ["dom0"],
+    "top.sls": ["dom0"],
 }
 
 env = jinja2.Environment(undefined=jinja2.StrictUndefined, trim_blocks=False)

@@ -4,7 +4,7 @@
     Qubes' top.enable expects this at /srv/salt/wgq.top rather than under
     the formula directory, so install it as:
 
-        sudo cp salt/top.sls /srv/salt/wgq.top
+        sudo cp /srv/salt/wgq/top.sls /srv/salt/wgq.top
         sudo qubesctl top.enable wgq
 
     Or skip top.enable entirely and apply the states by name, which is
