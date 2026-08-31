@@ -159,8 +159,8 @@ trusting it.
 ```sh
 # in dom0
 qvm-run --pass-io <qube> 'tar -C /path/to/qubes -c wgq' | sudo tar -C /srv/salt -x
-less /srv/salt/wgq/salt/wg-template.sls
-less /srv/salt/wgq/salt/wg-qubes.sls
+less /srv/salt/wgq/wg-template.sls
+less /srv/salt/wgq/wg-qubes.sls
 less /srv/salt/wgq/dom0/30-wgq.policy
 ```
 
@@ -325,7 +325,9 @@ and tells you exactly what to run where. A skipped check exits non-zero.
 ```
 wgq/
 ├── dom0/30-wgq.policy      two qrexec lines; read before copying
-├── salt/                   the formula
+├── wg-template.sls         the formula: clone + configure the template
+├── wg-qubes.sls            the formula: create the qubes
+├── top.sls                 optional, for qubesctl top.enable
 ├── template/               files installed into the template root
 │   ├── etc/qubes/qubes-firewall.d/50-wgq
 │   ├── etc/systemd/system/wg-tunnel.service
@@ -371,7 +373,7 @@ states here are written for 4.3.
 omit it. It means anything running as the user in these qubes can become
 root. For a qube with no user sessions that provides network to others, that
 is an acceptable trade; if it is not acceptable to you, drop it from
-`salt/wg-template.sls` and use `qvm-run -u root` from dom0 instead.
+`wg-template.sls` and use `qvm-run -u root` from dom0 instead.
 
 `make check` runs `shellcheck` when it is installed. Install it before
 sending patches that touch shell.
