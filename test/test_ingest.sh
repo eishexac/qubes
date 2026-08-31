@@ -136,6 +136,109 @@ else
 fi
 rm "$REPO/demo/bad name.txt"
 
+# ---- apply -----------------------------------------------------------------
+# A fake qubesctl logs its arguments; a scratch policy dir stands in for
+# /etc/qubes/policy.d. Answers are typed over stdin, like an operator would.
+
+cat > "$WORK/qubesctl" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "${QLOG:?}"
+exit "${QRC:-0}"
+EOF
+chmod +x "$WORK/qubesctl"
+
+run_apply() {
+	# $1 = answers piped to the prompts, $2 = fake qubesctl exit code
+	printf '%b' "$1" | env QUBES_INGEST_QUBESCTL="$WORK/qubesctl" \
+		QUBES_INGEST_POLICY_DIR="$WORK/policy.d" \
+		QLOG="$WORK/qlog" QRC="${2:-0}" \
+		"$INGEST" apply demo >"$WORK/out" 2>&1
+}
+reset_apply() { : > "$WORK/qlog"; rm -rf "$WORK/policy.d"; mkdir "$WORK/policy.d"; }
+
+# 10. Applying a project that declares no plan is a clear refusal.
+reset_apply
+if run_apply 'y\n'; then
+	fail "apply without a plan exited 0"
+elif grep -q 'declares no apply plan' "$WORK/out"; then
+	ok "apply refuses a project without a plan"
+else
+	cat "$WORK/out"; fail "no-plan refusal failed for the wrong reason"
+fi
+
+# Give the demo project a plan and a policy file, and install them.
+mkdir -p "$REPO/demo/dom0"
+printf 'demo policy line\n' > "$REPO/demo/dom0/demo.policy"
+cat > "$REPO/demo/.ingest-apply" <<'EOF'
+# comment shown during apply
+salt demo.state
+salt-target demo-tpl demo.state
+policy demo.policy
+EOF
+run_pull yes || { cat "$WORK/out"; fail "pull of the plan-bearing tree failed"; }
+
+# 11. A confirmed plan runs every step through the fixed verbs.
+reset_apply
+if run_apply 'y\ny\ny\n' \
+	&& grep -q -- '--show-output state.apply demo.state' "$WORK/qlog" \
+	&& grep -q -- '--skip-dom0 --targets=demo-tpl' "$WORK/qlog" \
+	&& [ -f "$WORK/policy.d/demo.policy" ]; then
+	ok "apply runs salt, salt-target and policy steps after yes"
+else
+	cat "$WORK/out" "$WORK/qlog" 2>/dev/null; fail "confirmed apply went wrong"
+fi
+
+# 12. Skipped steps run nothing.
+reset_apply
+if run_apply 's\ns\ns\n' && [ ! -s "$WORK/qlog" ] && [ ! -f "$WORK/policy.d/demo.policy" ]; then
+	ok "skipped steps run nothing"
+else
+	cat "$WORK/out"; fail "skip still ran something"
+fi
+
+# 13. Stopping aborts the rest of the plan.
+reset_apply
+if run_apply 'q\n'; then
+	fail "a 'q' answer still exited 0"
+elif [ ! -s "$WORK/qlog" ] && grep -q 'stopped' "$WORK/out"; then
+	ok "stop aborts before anything runs"
+else
+	cat "$WORK/out"; fail "stop behaved unexpectedly"
+fi
+
+# 14. A failing step halts the plan loudly.
+reset_apply
+if run_apply 'y\ny\ny\n' 1; then
+	fail "a failing qubesctl still exited 0"
+elif grep -q 'step failed' "$WORK/out"; then
+	ok "a failing step halts the plan"
+else
+	cat "$WORK/out"; fail "failure handling went wrong"
+fi
+
+# 15. A plan with an unknown verb is refused whole, before any prompt.
+printf 'rm -rf /\n' > "$REPO/demo/.ingest-apply"
+run_pull yes || { cat "$WORK/out"; fail "pull of the malformed plan failed"; }
+reset_apply
+if run_apply '' ; then
+	fail "a malformed plan was accepted"
+elif grep -q 'unknown verb' "$WORK/out" && [ ! -s "$WORK/qlog" ]; then
+	ok "malformed plan refused whole, nothing ran"
+else
+	cat "$WORK/out"; fail "malformed-plan refusal failed for the wrong reason"
+fi
+
+# 16. A tree that drifted since approval is not applied.
+printf 'tampered\n' >> "$QUBES_INGEST_SALT_ROOT/demo/readme.txt"
+reset_apply
+if run_apply 'y\n'; then
+	fail "apply ran on a tree that drifted from its receipt"
+elif grep -q 'differs from what was approved' "$WORK/out" && [ ! -s "$WORK/qlog" ]; then
+	ok "drifted tree refused before anything runs"
+else
+	cat "$WORK/out"; fail "drift refusal failed for the wrong reason"
+fi
+
 if [ "$failures" -gt 0 ]; then
 	printf '%s failure(s)\n' "$failures"
 	exit 1
