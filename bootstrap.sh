@@ -53,8 +53,13 @@ printf '\n== %s: build and verify (must be deterministic) ==\n' "$PROJECT"
 make -C "$PROJECT" verify
 
 if command -v sha256sum >/dev/null 2>&1; then SHA=sha256sum; else SHA="shasum -a 256"; fi
+# In a subshell with explicit fallbacks, so a project without artifacts
+# reports "none" instead of tripping set -e.
 # shellcheck disable=SC2086 # SHA may be two words (shasum -a 256)
-HASH=$(cd "$PROJECT" && $SHA dist/* 2>/dev/null || true)
+HASH=$(
+	cd "$PROJECT" || exit 0
+	$SHA dist/* 2>/dev/null || :
+)
 
 NAME=$(qubesdb-read /name 2>/dev/null || true)
 QUBE_KNOWN=1
