@@ -23,6 +23,14 @@
 #   4. Only after you type "yes" is the tree swapped into
 #      /srv/salt/<project>, and a receipt of what you approved recorded.
 #
+# `apply` then runs the project's declared install plan (.ingest-apply in
+# the REVIEWED tree under /srv/salt): a fixed verb set -- salt,
+# salt-target, policy -- interpreted by this script, never shell executed
+# from the payload. Every step is printed and confirmed before it runs
+# (y = run, s = skip, q = stop), and a tree that no longer matches its
+# approval receipt is refused. It replaces transcribing qubesctl commands
+# out of a README; it does not replace your judgment about running them.
+#
 # THREAT MODEL. The qube you pull from is NOT trusted: it can serve any
 # bytes it likes, including a tampered tree or a lying .ingest-binaries.
 # The control is that everything it serves is surfaced to you -- as text
@@ -45,6 +53,7 @@
 #
 # Usage:
 #     qubes-ingest pull <qube> <project> [path-in-qube]   (default: qubes)
+#     qubes-ingest apply <project>
 #     qubes-ingest status
 #
 # Exit: 0 done or already current, 1 refused/failed, 2 usage.
@@ -58,6 +67,9 @@ PAGER="${PAGER:-less}"
 # so capping the stream fails closed.
 MAX_BYTES=104857600
 PROG=${0##*/}
+# Overridable only so the apply flow can be tested outside dom0.
+QUBESCTL="${QUBES_INGEST_QUBESCTL:-qubesctl}"
+POLICY_DIR="${QUBES_INGEST_POLICY_DIR:-/etc/qubes/policy.d}"
 
 if command -v sha256sum >/dev/null 2>&1; then
 	SHA=sha256sum
@@ -70,6 +82,7 @@ note() { printf '%s: %s\n' "$PROG" "$*" >&2; }
 
 usage() {
 	printf 'usage: %s pull <qube> <project> [path-in-qube]\n' "$PROG" >&2
+	printf '       %s apply <project>\n' "$PROG" >&2
 	printf '       %s status\n' "$PROG" >&2
 	exit 2
 }
@@ -241,6 +254,112 @@ cmd_pull() {
 	return 0
 }
 
+# The apply plan is data, not code: three verbs this script interprets,
+# with every argument validated before anything runs. A payload can only
+# ever ask for salt states from its own tree and policy files from its own
+# dom0/ directory -- and the operator still confirms each step.
+validate_step() {
+	v_plan=$1 v_line=$2 v_verb=$3
+	shift 3
+	case "$v_verb" in
+		salt)
+			[ $# -eq 1 ] || die "$v_plan:$v_line: 'salt' takes exactly one state name"
+			check_token "$v_plan:$v_line" "$1" ;;
+		salt-target)
+			[ $# -eq 2 ] || die "$v_plan:$v_line: 'salt-target' takes <target> <state>"
+			check_token "$v_plan:$v_line" "$1"
+			check_token "$v_plan:$v_line" "$2" ;;
+		policy)
+			[ $# -eq 1 ] || die "$v_plan:$v_line: 'policy' takes exactly one file name"
+			case "$1" in
+				''|*[!A-Za-z0-9._-]*|-*) die "$v_plan:$v_line: unsafe policy file name '$1'" ;;
+			esac ;;
+		*)
+			die "$v_plan:$v_line: unknown verb '$v_verb' (known: salt, salt-target, policy)" ;;
+	esac
+}
+
+check_token() {
+	case "$2" in
+		''|*[!A-Za-z0-9._-]*|-*) die "$1: unsafe token '$2'" ;;
+	esac
+}
+
+run_step() {
+	r_project=$1 r_verb=$2
+	shift 2
+	case "$r_verb" in
+		salt)        r_cmd="$QUBESCTL --show-output state.apply $1" ;;
+		salt-target) r_cmd="$QUBESCTL --skip-dom0 --targets=$1 --show-output state.apply $2" ;;
+		policy)
+			r_src="$SALT_ROOT/$r_project/dom0/$1"
+			[ -f "$r_src" ] || die "plan names a policy file that is not in the tree: $r_src"
+			r_cmd="cp $r_src $POLICY_DIR/$1" ;;
+	esac
+	printf '\n--> %s\n' "$r_cmd"
+	printf 'Run this step? [y = run / s = skip / q = stop] '
+	r_answer=""
+	read -r r_answer || r_answer=q
+	case "$r_answer" in
+		y|yes)
+			# shellcheck disable=SC2086 # every word was validated above
+			$r_cmd || die "step failed: $r_cmd -- later steps not run"
+			;;
+		s|skip)
+			note "skipped" ;;
+		*)
+			die "stopped; this and later steps were not run" ;;
+	esac
+}
+
+cmd_apply() {
+	[ $# -eq 1 ] || usage
+	a_project=$1
+	check_name project "$a_project"
+	case "$a_project" in */*) die "a project is a single directory name" ;; esac
+
+	a_root="$SALT_ROOT/$a_project"
+	[ -d "$a_root" ] || die "$a_project is not installed; run 'pull' first"
+	a_plan="$a_root/.ingest-apply"
+	[ -f "$a_plan" ] || die "$a_project declares no apply plan (.ingest-apply); follow its README by hand"
+	command -v "$QUBESCTL" >/dev/null 2>&1 || die "$QUBESCTL not found; is this dom0?"
+
+	# Only apply what was approved: a tree that drifted since its receipt
+	# gets re-pulled and re-reviewed, not executed.
+	if [ -f "$RECEIPTS/$a_project" ]; then
+		a_recorded=$(sed -n 's/^tree=//p' "$RECEIPTS/$a_project")
+		if [ -n "$a_recorded" ] && [ "$(tree_hash "$a_root")" != "$a_recorded" ]; then
+			die "$a_project differs from what was approved; 'pull' it again before applying"
+		fi
+	fi
+
+	# Validate the whole plan before running any of it.
+	a_n=0
+	# shellcheck disable=SC2094 # the plan's NAME is passed for error
+	# messages only; nothing in the loop writes to the file being read
+	while IFS= read -r a_line <&3 || [ -n "$a_line" ]; do
+		a_n=$((a_n + 1))
+		case "$a_line" in ''|'#'*) continue ;; esac
+		# shellcheck disable=SC2086 # deliberate word splitting of the plan line
+		validate_step "$a_plan" "$a_n" $a_line
+	done 3< "$a_plan"
+
+	note "apply plan for $a_project -- each step asks before it runs:"
+	grep -v '^[[:space:]]*$' "$a_plan" | sed 's/^/    /' >&2
+
+	# Plan on fd 3; stdin stays free for the per-step confirmations.
+	while IFS= read -r a_line <&3 || [ -n "$a_line" ]; do
+		case "$a_line" in
+			'') continue ;;
+			'#'*) printf '\n%s\n' "$a_line" ;;
+			*)
+				# shellcheck disable=SC2086 # deliberate word splitting
+				run_step "$a_project" $a_line ;;
+		esac
+	done 3< "$a_plan"
+	note "apply finished for $a_project"
+}
+
 cmd_status() {
 	[ -d "$RECEIPTS" ] || { note "no receipts; nothing has been installed by this tool"; return 0; }
 	rc=0
@@ -264,6 +383,7 @@ cmd_status() {
 
 case "${1:-}" in
 	pull)   shift; cmd_pull "$@" ;;
+	apply)  shift; cmd_apply "$@" ;;
 	status) cmd_status ;;
 	*)      usage ;;
 esac
