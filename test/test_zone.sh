@@ -80,8 +80,10 @@ cat > "$WORK/bin/qubesctl" <<'EOF'
 printf '%s\n' "$*" >> "${QCTL_LOG:?}"
 zone=$(printf '%s' "$*" | sed -n 's/.*"zone": "\([a-z0-9-]*\)".*/\1/p')
 if [ -n "$zone" ]; then
-	printf 'sys-wgq-%s|AppVM|sys-firewall|True\n' "$zone" >> "${FAKEQ:?}"
-	printf 'sys-fw-%s|AppVM|sys-wgq-%s|True\n' "$zone" "$zone" >> "$FAKEQ"
+	vpn="sys-wgq-$zone"
+	[ "$zone" = wgq ] && vpn=sys-wgq
+	printf '%s|AppVM|sys-firewall|True\n' "$vpn" >> "${FAKEQ:?}"
+	printf 'sys-fw-%s|AppVM|%s|True\n' "$zone" "$vpn" >> "$FAKEQ"
 fi
 EOF
 
@@ -189,6 +191,36 @@ if zone list >"$WORK/out" 2>&1 && grep -q 'clients:' "$WORK/out"; then
 	ok "list shows zones and clients"
 else
 	cat "$WORK/out"; fail "list went wrong"
+fi
+
+# 9. Bare `add` prompts; Enter takes the single-VPN default: bare sys-wgq.
+if printf '\n\n\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" add >"$WORK/out" 2>&1 \
+	&& grep -q 'single-VPN default' "$WORK/out" \
+	&& grep -q '^sys-wgq|' "$FAKEQ" \
+	&& grep -q '^sys-fw-wgq|' "$FAKEQ"; then
+	ok "bare add defaults to the singleton (sys-wgq + sys-fw-wgq)"
+else
+	cat "$WORK/out"; fail "singleton default went wrong"
+fi
+
+# 10. The bare sys-wgq is plumbing: attach-all must never grab it.
+if zone add z9 --attach-all >"$WORK/out" 2>&1 \
+	&& [ "$(netvm_of sys-wgq)" = "sys-firewall" ]; then
+	ok "attach-all leaves the singleton VPN qube untouched"
+else
+	cat "$WORK/out"; fail "attach-all touched plumbing"
+fi
+
+# 11. Removing the singleton zone removes the bare-named qube.
+awk -F'|' '$3 == "sys-fw-wgq" {print $1}' "$FAKEQ" | while read -r q; do
+	zone detach "$q" >/dev/null 2>&1 || true
+done
+if printf 'wgq\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove wgq >"$WORK/out" 2>&1 \
+	&& ! grep -q '^sys-wgq|' "$FAKEQ" \
+	&& ! grep -q '^sys-fw-wgq|' "$FAKEQ"; then
+	ok "singleton zone removal takes the bare-named qube"
+else
+	cat "$WORK/out"; fail "singleton removal went wrong"
 fi
 
 if [ "$failures" -gt 0 ]; then

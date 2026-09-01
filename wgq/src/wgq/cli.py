@@ -67,7 +67,16 @@ def require_zone(zone: str) -> str:
 
 
 def vm_for_zone(zone: str) -> str:
-    return f"sys-wgq-{require_zone(zone)}"
+    """The zone's VPN qube name.
+
+    zone 'work' -> sys-wgq-work.  The reserved zone 'wgq' -- the default
+    for single-VPN-for-everything setups -- yields the bare 'sys-wgq'
+    (naive derivation would produce the stutter 'sys-wgq-wgq').  The
+    firewall qube has no exception anywhere: sys-fw-wgq already reads
+    fine and keeps the parseable sys-fw-<zone> grammar.
+    """
+    zone = require_zone(zone)
+    return "sys-wgq" if zone == "wgq" else f"sys-wgq-{zone}"
 
 
 def record_dir(zone: str) -> Path:

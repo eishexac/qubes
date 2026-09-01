@@ -53,6 +53,13 @@ check_qube_name() {
 
 zone_exists() { qvm-check --quiet "sys-fw-$1" 2>/dev/null; }
 
+# The reserved zone 'wgq' -- the single-VPN-for-everything default -- has
+# the bare VPN qube name; every other zone follows sys-wgq-<zone>. The
+# firewall name never varies: sys-fw-<zone> stays the parseable grammar.
+vpn_name() {
+	if [ "$1" = wgq ]; then printf 'sys-wgq\n'; else printf 'sys-wgq-%s\n' "$1"; fi
+}
+
 # Every qube that reaches the network and is not zone plumbing itself.
 # Used only to offer candidates; nothing is ever attached from here
 # without the operator naming it or explicitly saying "all".
@@ -61,7 +68,7 @@ client_candidates() {
 	| while IFS='|' read -r c_name c_class c_netvm; do
 		case "$c_class" in AppVM|StandaloneVM) ;; *) continue ;; esac
 		case "$c_netvm" in ''|-|None) continue ;; esac
-		case "$c_name" in sys-wgq-*|sys-fw-*) continue ;; esac
+		case "$c_name" in sys-wgq|sys-wgq-*|sys-fw-*) continue ;; esac
 		if qvm-prefs "$c_name" provides_network 2>/dev/null | grep -qi true; then
 			continue
 		fi
@@ -132,9 +139,16 @@ attach_dialogue() {
 }
 
 cmd_add() {
-	[ $# -ge 1 ] || usage
-	z=$1
-	shift
+	if [ $# -eq 0 ]; then
+		printf '%s: zone name? Enter for the single-VPN default (sys-wgq + sys-fw-wgq),\n' "$PROG"
+		printf 'or type a name for a suffixed zone (sys-wgq-<name> + sys-fw-<name>): '
+		z=""
+		read -r z || true
+		[ -n "$z" ] || z=wgq
+	else
+		z=$1
+		shift
+	fi
 	check_zone "$z"
 	upstream=""
 	attach_mode="ask"
@@ -163,7 +177,7 @@ cmd_add() {
 		pillar="{\"wgq\": {\"zone\": \"$z\", \"upstream\": \"$upstream\"}}"
 	fi
 	qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
-	note "zone $z is up (sys-wgq-$z + sys-fw-$z)"
+	note "zone $z is up ($(vpn_name "$z") + sys-fw-$z)"
 
 	case "$attach_mode" in
 		none) note "no qubes attached; later: $PROG attach $z <qube>" ;;
@@ -209,7 +223,7 @@ cmd_list() {
 		lz=${fw#sys-fw-}
 		clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
 			| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
-		printf '%-21s  vpn=sys-wgq-%s  clients: %s\n' "$lz" "$lz" "${clients:-none}"
+		printf '%-21s  vpn=%s  clients: %s\n' "$lz" "$(vpn_name "$lz")" "${clients:-none}"
 	done
 	[ "$found" -eq 1 ] || note "no zones exist; create one with: $PROG add <zone>"
 }
@@ -223,14 +237,15 @@ cmd_remove() {
 	if [ -n "${rclients% }" ]; then
 		die "qubes still attached to zone '$1': ${rclients% }. Detach them first: $PROG detach <qube>"
 	fi
-	printf '%s: this DESTROYS sys-fw-%s and sys-wgq-%s, including the zone'\''s\n' "$PROG" "$1" "$1"
+	rvpn=$(vpn_name "$1")
+	printf '%s: this DESTROYS sys-fw-%s and %s, including the zone'\''s\n' "$PROG" "$1" "$rvpn"
 	printf 'private key. Type the zone name to confirm: '
 	r_ans=""
 	read -r r_ans || true
 	[ "$r_ans" = "$1" ] || die "confirmation did not match; nothing removed"
-	qvm-shutdown --wait "sys-fw-$1" "sys-wgq-$1" 2>/dev/null || true
+	qvm-shutdown --wait "sys-fw-$1" "$rvpn" 2>/dev/null || true
 	qvm-remove -f "sys-fw-$1"
-	qvm-remove -f "sys-wgq-$1"
+	qvm-remove -f "$rvpn"
 	note "zone $1 removed. Its registered key still holds a provider device slot;"
 	note "revoke it (wgq revoke / provider website) if it was ever provisioned."
 }

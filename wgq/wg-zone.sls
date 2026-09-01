@@ -22,6 +22,9 @@
 {% set tpl      = salt['pillar.get']('wgq:template', 'debian-13-wgq') %}
 {% set upstream = salt['pillar.get']('wgq:upstream', 'sys-firewall') %}
 {% set label    = salt['pillar.get']('wgq:label', 'orange') %}
+{#- The reserved zone 'wgq' (single-VPN default) collapses the VPN qube
+    name to bare sys-wgq; the firewall name follows the normal grammar. -#}
+{% set vpnq = 'sys-wgq' if zone == 'wgq' else 'sys-wgq-' ~ zone %}
 
 {% if not zone %}
 
@@ -33,43 +36,43 @@ wgq-zone-name-missing:
 
 {% else %}
 
-sys-wgq-{{ zone }}-present:
+wgq-vpn-{{ zone }}-present:
   qvm.present:
-    - name: sys-wgq-{{ zone }}
+    - name: {{ vpnq }}
     - template: {{ tpl }}
     - label: {{ label }}
 
-sys-wgq-{{ zone }}-prefs:
+wgq-vpn-{{ zone }}-prefs:
   qvm.prefs:
-    - name: sys-wgq-{{ zone }}
+    - name: {{ vpnq }}
     - netvm: {{ upstream }}
     - provides_network: True
     # Left off deliberately. A half-configured VPN qube coming up at every
     # boot while you are still iterating is worse than starting it by hand.
     - autostart: False
     - require:
-      - qvm: sys-wgq-{{ zone }}-present
+      - qvm: wgq-vpn-{{ zone }}-present
 
 # The service flag is what 50-wgq keys its role decision on: a marked qube
 # that is not yet configured FAILS CLOSED (forwards nothing) instead of
 # behaving like an ordinary proxy -- the clear-forwarding window found on
 # the first hardware run. qvm-features is used rather than a Salt state so
 # the security-relevant command is visible in this file.
-sys-wgq-{{ zone }}-service:
+wgq-vpn-{{ zone }}-service:
   cmd.run:
-    - name: qvm-features sys-wgq-{{ zone }} service.wgq-vpn 1
-    - unless: qvm-features sys-wgq-{{ zone }} service.wgq-vpn | grep -qx 1
+    - name: qvm-features {{ vpnq }} service.wgq-vpn 1
+    - unless: qvm-features {{ vpnq }} service.wgq-vpn | grep -qx 1
     - require:
-      - qvm: sys-wgq-{{ zone }}-present
+      - qvm: wgq-vpn-{{ zone }}-present
 
 # The tag is what the dom0 policy grants against, so wgq-mgmt can rewrite
 # the firewall of these qubes and of nothing else.
-sys-wgq-{{ zone }}-tag:
+wgq-vpn-{{ zone }}-tag:
   cmd.run:
-    - name: qvm-tags sys-wgq-{{ zone }} add wgq-zone
-    - unless: qvm-tags sys-wgq-{{ zone }} list | grep -qx wgq-zone
+    - name: qvm-tags {{ vpnq }} add wgq-zone
+    - unless: qvm-tags {{ vpnq }} list | grep -qx wgq-zone
     - require:
-      - qvm: sys-wgq-{{ zone }}-present
+      - qvm: wgq-vpn-{{ zone }}-present
 
 sys-fw-{{ zone }}-present:
   qvm.present:
@@ -80,11 +83,11 @@ sys-fw-{{ zone }}-present:
 sys-fw-{{ zone }}-prefs:
   qvm.prefs:
     - name: sys-fw-{{ zone }}
-    - netvm: sys-wgq-{{ zone }}
+    - netvm: {{ vpnq }}
     - provides_network: True
     - autostart: False
     - require:
       - qvm: sys-fw-{{ zone }}-present
-      - qvm: sys-wgq-{{ zone }}-prefs
+      - qvm: wgq-vpn-{{ zone }}-prefs
 
 {% endif %}

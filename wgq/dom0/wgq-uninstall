@@ -37,15 +37,17 @@ read -r ans || true
 # Zones first; a zone with attached clients refuses, deliberately.
 for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
 	zone=${fw#sys-fw-}
+	vpn="sys-wgq-$zone"
+	[ "$zone" = wgq ] && vpn=sys-wgq   # the single-VPN default zone
 	clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
 		| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
 	if [ -n "${clients% }" ]; then
 		die "zone '$zone' still has attached qubes: ${clients% }. Detach them first (wgq-zone detach <qube>), then re-run."
 	fi
-	if step "remove zone $zone (sys-fw-$zone + sys-wgq-$zone, including its private key)"; then
-		qvm-shutdown --wait "sys-fw-$zone" "sys-wgq-$zone" 2>/dev/null || true
+	if step "remove zone $zone (sys-fw-$zone + $vpn, including its private key)"; then
+		qvm-shutdown --wait "sys-fw-$zone" "$vpn" 2>/dev/null || true
 		qvm-remove -f "sys-fw-$zone"
-		qvm-remove -f "sys-wgq-$zone"
+		qvm-remove -f "$vpn"
 		note "zone $zone removed; revoke its registered key at the provider if it was provisioned"
 	fi
 done

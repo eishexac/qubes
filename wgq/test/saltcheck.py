@@ -31,10 +31,11 @@ targets = {
 }
 
 # wg-zone renders a deliberate failure state when no zone is in pillar, so
-# both branches need a parse: the default render above covers the missing
-# branch; this override covers the real one.
+# every branch needs a parse: the default render covers the missing-name
+# branch, and these cover a normal zone plus the reserved single-VPN zone
+# 'wgq' (whose VPN qube name collapses to bare sys-wgq).
 pillar_overrides = {
-    "wg-zone.sls": {"wgq:zone": "ztest"},
+    "wg-zone.sls": [{"wgq:zone": "ztest"}, {"wgq:zone": "wgq"}],
 }
 
 env = jinja2.Environment(undefined=jinja2.StrictUndefined, trim_blocks=False)
@@ -43,7 +44,7 @@ for path, ids in targets.items():
     src = open(path).read()
     pillar_cases = [None]
     if path in pillar_overrides:
-        pillar_cases.append(pillar_overrides[path])
+        pillar_cases.extend(pillar_overrides[path])
     for vm_id in ids:
       for overrides in pillar_cases:
         label = f"{path} (grains.id={vm_id}"

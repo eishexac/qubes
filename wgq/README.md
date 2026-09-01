@@ -306,6 +306,13 @@ attached. The tool imposes no topology — all of these are legitimate:
 - **one zone per identity**: the reason zones exist
 - **a dedicated infra zone** for system traffic, separate from identities
 
+The single-VPN setup has first-class naming: bare `wgq-zone add` asks for
+a zone name, and plain Enter takes the reserved zone `wgq`, whose qubes
+are the unsuffixed `sys-wgq` plus `sys-fw-wgq`. Internally it is still a
+named zone — `--zone wgq` everywhere — so the tag, the policy and the
+tooling keep one grammar, and growing into a second, suffixed zone later
+renames nothing and re-points no client.
+
 **System services**, if you want them tunnelled, point at a zone's
 firewall qube like anything else — picking *which* zone is the decision
 that matters, and it is yours:
