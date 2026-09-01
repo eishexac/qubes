@@ -1,0 +1,61 @@
+#!/bin/sh
+#
+# wgq-zone - zone lifecycle, from dom0, one deliberate command per act.
+#
+#     sudo /srv/salt/wgq/dom0/wgq-zone add <zone>
+#         create sys-wgq-<zone> + sys-fw-<zone> (tagged, marked, wired)
+#
+#     sudo /srv/salt/wgq/dom0/wgq-zone attach <zone> <qube>
+#         point a client qube at the zone's firewall
+#
+# Zones are user lifecycle, not installation: the formula's apply step
+# creates only infrastructure (the template and wgq-mgmt), and this is the
+# tool that makes creating an identity zone one visible command instead of
+# a pillar edit. It runs in dom0 because creating qubes and rewiring
+# netvms is dom0 authority on purpose -- granting those powers to a qube
+# is exactly what this project refuses to do.
+#
+# Removal stays manual, as destruction should:
+#     qvm-remove sys-fw-<zone>; qvm-remove sys-wgq-<zone>
+
+set -eu
+
+PROG=${0##*/}
+
+usage() {
+	printf 'usage: %s add <zone>\n' "$PROG" >&2
+	printf '       %s attach <zone> <qube>\n' "$PROG" >&2
+	exit 2
+}
+
+die() { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
+
+check_zone() {
+	# Mirrors the wgq CLI's zone rule; 21 chars keeps sys-wgq-/sys-fw-
+	# names inside Qubes' 31-character limit.
+	case "$1" in
+		''|*[!a-z0-9-]*|-*) die "unusable zone name '$1' (lowercase, digits, dashes)" ;;
+	esac
+	[ ${#1} -le 21 ] || die "zone name '$1' is longer than 21 characters"
+}
+
+case "${1:-}" in
+	add)
+		[ $# -eq 2 ] || usage
+		check_zone "$2"
+		qubesctl --show-output state.apply wgq.wg-zone pillar="{\"wgq\": {\"zone\": \"$2\"}}"
+		printf '\n%s: zone %s is up. Point clients at it with:\n' "$PROG" "$2"
+		printf '    %s attach %s <qube>\n' "$PROG" "$2"
+		;;
+	attach)
+		[ $# -eq 3 ] || usage
+		check_zone "$2"
+		qvm-check --quiet "sys-fw-$2" || die "zone '$2' does not exist; create it with: $PROG add $2"
+		qvm-check --quiet "$3" || die "no such qube '$3'"
+		qvm-prefs "$3" netvm "sys-fw-$2"
+		printf '%s: %s now reaches the network only through zone %s\n' "$PROG" "$3" "$2"
+		;;
+	*)
+		usage
+		;;
+esac

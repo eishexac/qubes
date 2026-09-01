@@ -1,6 +1,6 @@
 """The zone qube's own state, under /rw/config/wg.
 
-Everything here runs inside sys-vpn-<zone>.  This is the only module that
+Everything here runs inside sys-wgq-<zone>.  This is the only module that
 ever handles a private key, and the key never leaves the qube that made it:
 wgq-mgmt is given the public half and emits configs holding the literal
 string ``__PRIVATE_KEY__``, which is substituted here.
@@ -56,7 +56,7 @@ def looks_like_zone_qube() -> bool:
 def require_zone_qube() -> None:
     if not looks_like_zone_qube():
         raise UsageError(
-            "this command must run inside the VPN qube (sys-vpn-<zone>); "
+            "this command must run inside the VPN qube (sys-wgq-<zone>); "
             "/rw/config does not exist here"
         )
 

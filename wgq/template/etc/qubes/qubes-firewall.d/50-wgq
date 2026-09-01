@@ -30,10 +30,10 @@ STATE="$RUN_DIR/state"
 note() { logger -t wgq-firewall -p daemon.notice -- "$*"; }
 warn() { logger -t wgq-firewall -p daemon.err    -- "$*"; }
 
-# Only VPN qubes have /rw/config/wg.  sys-fw-<zone> and ordinary AppVMs on
-# this template fall out here - which is the whole reason these rules can
-# ship in the template at all.
-[ -d "$WG_DIR" ] || exit 0
+# Role is decided by the qube's service flag, not by what happens to be on
+# disk: the Salt formula marks VPN qubes with the wgq-vpn service, so
+# sys-fw-<zone> and ordinary AppVMs on this shared template fall out here.
+[ -f /var/run/qubes-service/wgq-vpn ] || exit 0
 
 mkdir -p "$RUN_DIR" || warn "cannot create $RUN_DIR; state will go unrecorded"
 
@@ -49,6 +49,15 @@ panic() {
 	conntrack -F >/dev/null 2>&1
 	exit 1
 }
+
+# A marked VPN qube that has not been configured yet must NOT behave like
+# an ordinary proxy: before the first keygen/apply/switch there is no
+# tunnel, and forwarding would send clients to the uplink in the clear --
+# the exact leak this project exists to prevent. First-contact finding
+# from the first hardware run.
+if [ ! -d "$WG_DIR" ] || [ ! -L "$LINK" ]; then
+	panic "no active peer configured yet (run wgq keygen/apply/switch); refusing to forward in the clear"
+fi
 
 is_ipv4() {
 	case "$1" in

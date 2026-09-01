@@ -11,16 +11,16 @@
     clearer about what runs where and is what the README does:
 
         sudo qubesctl --show-output state.apply wgq.wg-template
-        sudo qubesctl --skip-dom0 --targets=wgq-debian-13 --show-output \
+        sudo qubesctl --skip-dom0 --targets=debian-13-wgq --show-output \
             state.apply wgq.wg-template
-        sudo qubesctl --show-output state.apply wgq.wg-qubes
+        sudo qubesctl --show-output state.apply wgq.wg-mgmt
 -#}
 
-{% set tpl = salt['pillar.get']('wgq:template', 'wgq-debian-13') %}
+{% set tpl = salt['pillar.get']('wgq:template', 'debian-13-wgq') %}
 
 base:
   dom0:
     - wgq.wg-template
-    - wgq.wg-qubes
+    - wgq.wg-mgmt
   '{{ tpl }}':
     - wgq.wg-template

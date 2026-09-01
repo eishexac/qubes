@@ -2,7 +2,7 @@
 #
 # verify.sh - prove that a wgq zone actually leaks nothing.
 #
-# Run this in a CLIENT qube, one that sits behind sys-firewall-<zone>.  Never
+# Run this in a CLIENT qube, one that sits behind sys-fw-<zone>.  Never
 # in the VPN qube: its own egress to the endpoint is deliberately permitted,
 # so testing there proves nothing about what clients can reach.
 #
@@ -298,7 +298,7 @@ capture_instructions() {
 To produce a capture for check 4, run this in the UPSTREAM firewall qube
 (sys-firewall), not here:
 
-    ip -br link                       # find the vif facing sys-vpn-<zone>
+    ip -br link                       # find the vif facing sys-wgq-<zone>
     sudo tcpdump -n -i <vif> -w /tmp/wgq.pcap
 
 Generate some traffic here, stop the capture, then bring it over:
@@ -352,14 +352,14 @@ case "$STAGE" in
 		check_dns
 
 		if confirm "Now STOP the tunnel. In dom0:
-    qvm-run -u root sys-vpn-<zone> 'systemctl stop wg-tunnel'"; then
+    qvm-run -u root sys-wgq-<zone> 'systemctl stop wg-tunnel'"; then
 			check_killswitch
 		else
 			skip 3 "operator did not stop the tunnel"
 		fi
 
 		if confirm "Now START it again. In dom0:
-    qvm-run -u root sys-vpn-<zone> 'systemctl start wg-tunnel'"; then
+    qvm-run -u root sys-wgq-<zone> 'systemctl start wg-tunnel'"; then
 			:
 		fi
 

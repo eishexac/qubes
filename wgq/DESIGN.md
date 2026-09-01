@@ -34,7 +34,7 @@ Everything below follows from those.
 ## 2. Topology
 
 ```
-sys-net ── sys-firewall ─┬─ sys-vpn-work ── sys-firewall-work ── [client qubes]
+sys-net ── sys-firewall ─┬─ sys-wgq-work ── sys-fw-work ── [client qubes]
                          ├─ wgq-mgmt                             (provisioning only)
                          └─ sys-whonix                           (optional)
 ```
@@ -49,13 +49,13 @@ Three things follow from it:
 - Firewall changes inside the VPN qube cannot render the Qubes firewall
   ineffective.
 - Compromise of the VPN qube does not reach the firewall qube.
-- Clients point at `sys-firewall-work` permanently, so switching which VPN
-  backs them is `qvm-prefs sys-firewall-work netvm sys-vpn-other` — one
+- Clients point at `sys-fw-work` permanently, so switching which VPN
+  backs them is `qvm-prefs sys-fw-work netvm sys-wgq-other` — one
   command, no client touched.
 
 **One VPN qube per identity zone, not one qube with policy routing.** This
 is forced, not chosen. Client traffic reaches the VPN qube appearing to come
-from `sys-firewall-work`, because that qube masquerades. Per-client policy
+from `sys-fw-work`, because that qube masquerades. Per-client policy
 inside the VPN qube is therefore impossible. Separate qubes are the only way
 to keep zones apart.
 
@@ -64,7 +64,7 @@ tunnel to reach the provider cannot fix a broken tunnel, and sending
 account authentication through a tunnel keyed to that same account is its
 own problem.
 
-**No firewall qube between `sys-vpn-*` and `sys-whonix`.** Whonix-Gateway
+**No firewall qube between `sys-wgq-*` and `sys-whonix`.** Whonix-Gateway
 does not respect the qubes-firewall service, so rules on qubes behind it
 have no effect. It would buy nothing.
 
@@ -75,7 +75,7 @@ have no effect. It would buy nothing.
 | Layer | Enforced by | Survives VPN qube compromise |
 |---|---|---|
 | `qvm-firewall` endpoint allowlist | `sys-firewall`, upstream | **Yes** |
-| `sys-firewall-<zone>` | a separate Xen domain | **Yes** |
+| `sys-fw-<zone>` | a separate Xen domain | **Yes** |
 | `/etc/qubes/qubes-firewall.d/50-wgq` | inside the VPN qube | No |
 
 **Layer 1 is the real protection.** The rules live in dom0 at
@@ -166,7 +166,7 @@ Putting the rules at `/etc/qubes/qubes-firewall.d/50-wgq` also answers a
 question `/rw/config` cannot: who installs the file? `/rw` is per-qube and
 never comes from the template, so something would have to place it in every
 zone qube. From the template, Salt installs it once and every qube inherits
-it. Qubes without `/rw/config/wg` — `sys-firewall-<zone>`, ordinary AppVMs —
+it. Qubes without `/rw/config/wg` — `sys-fw-<zone>`, ordinary AppVMs —
 no-op on the first line.
 
 The feature has existed since February 2018, so it is safe on 4.1 through
@@ -193,6 +193,23 @@ disables forwarding outright and logs why. A qube that forwards nothing is
 a visible, correct failure. One that forwards in the clear is not.
 
 It also writes its verdict to `/run/wgq/state`, which `wgq status` reads.
+
+### An unconfigured VPN qube fails closed
+
+The template is shared, so `50-wgq` must no-op in `sys-fw-<zone>` and
+ordinary qubes — but "no wg directory on disk" cannot be the test, because
+a freshly created VPN qube looks exactly the same and would then behave as
+a plain forwarding proxy until its first `wgq switch`: clients on the
+uplink, in the clear. The first hardware run demonstrated this window
+live.
+
+So role is declared, not inferred: the zone state marks VPN qubes with the
+`wgq-vpn` Qubes service, and `50-wgq` keys on
+`/var/run/qubes-service/wgq-vpn`. Unmarked qube: exit quietly. Marked but
+unconfigured: panic — forwarding off, conntrack flushed, verdict written —
+until the first successful switch installs real rules and the success path
+re-enables forwarding. A zone qube is leak-tight from the moment it
+exists, not from the moment it is configured.
 
 Two consequences fell out of reviewing the failure path itself:
 
@@ -278,7 +295,7 @@ registration order, and netfilter commits the first DNAT decision for a
 connection. So the outcome varies between boots.
 
 And when Qubes wins, the result is worse than a wrong resolver. Inside
-`sys-vpn-<zone>`, the script reads the address the qube advertises
+`sys-wgq-<zone>`, the script reads the address the qube advertises
 downstream (`10.139.1.1`) and the qube's own resolver — which `setup-ip`
 also wrote as `10.139.1.1`. The rule it emits is a no-op. That is fine in an
 ordinary proxy qube, where the packet walks up a chain of no-op DNATs to
@@ -303,7 +320,7 @@ nft add rule ip qubes wgq-dns iifgroup 2 udp dport 53 dnat to "$dns"
 later, and so flushing it is unambiguously safe.
 
 The match is deliberately **destination-agnostic**. Adding `ip daddr` would
-break the moment `sys-firewall-<zone>`'s own `dnat-dns` has already
+break the moment `sys-fw-<zone>`'s own `dnat-dns` has already
 rewritten the destination — which it has, by the time the packet arrives.
 It also means a client that hardcodes `8.8.8.8` is caught, which a
 destination-scoped rule would miss.
@@ -510,7 +527,7 @@ while you iterate is worse than starting it by hand.
 ## 9. The tool
 
 **One binary, two roles.** Provisioning runs in `wgq-mgmt`, which holds the
-credential; key handling runs in `sys-vpn-<zone>`, where the private key
+credential; key handling runs in `sys-wgq-<zone>`, where the private key
 lives. All of it refuses dom0 outright. The mgmt/zone split itself is
 enforced by possession rather than by guessing qube names: the credential
 file lives in one qube and the key in the other, so a command typed into

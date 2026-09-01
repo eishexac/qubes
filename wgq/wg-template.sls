@@ -12,7 +12,7 @@
       sudo qubesctl --show-output state.apply wgq.wg-template
           dom0 branch: clone, then bootstrap the Salt connector.
 
-      sudo qubesctl --skip-dom0 --targets=wgq-debian-13 --show-output \
+      sudo qubesctl --skip-dom0 --targets=debian-13-wgq --show-output \
           state.apply wgq.wg-template
           template branch: packages and files.
 
@@ -22,7 +22,7 @@
 -#}
 
 {% set base = salt['pillar.get']('wgq:base_template', 'debian-13-minimal') %}
-{% set tpl  = salt['pillar.get']('wgq:template', 'wgq-debian-13') %}
+{% set tpl  = salt['pillar.get']('wgq:template', 'debian-13-wgq') %}
 
 {% if grains['id'] == 'dom0' %}
 
@@ -119,7 +119,7 @@ wgq-systemd-reload:
 # Enabled in the TEMPLATE, not in the qube: /etc is restored from the
 # template on every AppVM boot, so `systemctl enable` inside a qube is lost.
 # The unit no-ops in qubes without /rw/config/wg, so enabling it here is
-# harmless for sys-firewall-<zone> and any other qube on this template.
+# harmless for sys-fw-<zone> and any other qube on this template.
 wg-tunnel.service:
   service.enabled:
     - require:
