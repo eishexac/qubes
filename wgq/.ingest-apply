@@ -18,6 +18,10 @@ salt wgq.wg-icons
 # tree, so `sudo wgq zone add <zone>` works instead of the /srv/salt
 # path, and `wgq provision ...` frames the qvm-run into wgq-mgmt.
 salt wgq.wg-cli
+# The wgq label namespace stays dom0's alone: explicit qrexec denies
+# for admin.label.Create/Remove on wgq's own label names, so a later
+# broad admin grant to some management qube can never rewrite them.
+policy 30-wgq-labels.policy
 # Create wgq-mgmt, the provisioning qube. Zones are NOT created here:
 # they are user lifecycle, one deliberate command each --
 #     sudo wgq zone add <zone>
