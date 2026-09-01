@@ -49,6 +49,8 @@ wgq-vpn-{{ zone }}-prefs:
     - provides_network: True
     # Left off deliberately. A half-configured VPN qube coming up at every
     # boot while you are still iterating is worse than starting it by hand.
+    # wgq-zone starts the fresh qubes once after creating them (a halted
+    # netvm cannot accept clients); every boot after that is your call.
     - autostart: False
     - require:
       - qvm: wgq-vpn-{{ zone }}-present
@@ -64,6 +66,25 @@ wgq-vpn-{{ zone }}-service:
     - unless: qvm-features {{ vpnq }} service.wgq-vpn | grep -qx 1
     - require:
       - qvm: wgq-vpn-{{ zone }}-present
+
+# servicevm is what gives sys-net and sys-firewall their system-qube look
+# and grouping in the GUI (the Service section, the dot-marked icon).
+# Zone qubes are the same kind of thing -- plumbing, not a workspace --
+# so they carry the same mark. wgq-mgmt deliberately does not: commands
+# are typed there, so it stays an ordinary app qube.
+wgq-vpn-{{ zone }}-servicevm:
+  cmd.run:
+    - name: qvm-features {{ vpnq }} servicevm 1
+    - unless: qvm-features {{ vpnq }} servicevm | grep -qx 1
+    - require:
+      - qvm: wgq-vpn-{{ zone }}-present
+
+sys-fw-{{ zone }}-servicevm:
+  cmd.run:
+    - name: qvm-features sys-fw-{{ zone }} servicevm 1
+    - unless: qvm-features sys-fw-{{ zone }} servicevm | grep -qx 1
+    - require:
+      - qvm: sys-fw-{{ zone }}-present
 
 # The tag is what the dom0 policy grants against, so wgq-mgmt can rewrite
 # the firewall of these qubes and of nothing else.

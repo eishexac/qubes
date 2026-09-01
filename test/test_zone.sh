@@ -18,12 +18,15 @@ ok()   { printf 'ok:   %s\n' "$*"; }
 fail() { printf 'FAIL: %s\n' "$*"; failures=$((failures + 1)); }
 
 # ---- fakes ----------------------------------------------------------------
-# State: $WORK/qubes holds "name|class|netvm|provides_network" rows.
+# State: $WORK/qubes holds "name|class|netvm|provides_network" rows;
+# $WORK/running lists the qubes that are up (fresh zone qubes are born
+# halted, exactly as on a real machine).
 mkdir -p "$WORK/bin"
 cat > "$WORK/qubes" <<'EOF'
 work|AppVM|sys-firewall|False
 media|AppVM|sys-firewall|False
 mail|AppVM|sys-firewall|False
+dev|AppVM|sys-firewall|False
 sys-net|AppVM|-|True
 sys-firewall|AppVM|sys-net|True
 tpl1|TemplateVM|-|False
@@ -31,8 +34,17 @@ EOF
 
 cat > "$WORK/bin/qvm-check" <<'EOF'
 #!/bin/sh
-for a in "$@"; do case "$a" in --quiet) ;; *) name=$a ;; esac; done
-grep -q "^${name}|" "${FAKEQ:?}"
+running=0
+for a in "$@"; do case "$a" in --quiet) ;; --running) running=1 ;; *) name=$a ;; esac; done
+grep -q "^${name}|" "${FAKEQ:?}" || exit 1
+[ "$running" -eq 0 ] || grep -qx "$name" "${RUNNING:?}"
+EOF
+
+cat > "$WORK/bin/qvm-start" <<'EOF'
+#!/bin/sh
+for a in "$@"; do case "$a" in -*) ;; *) name=$a ;; esac; done
+grep -qx "$name" "${RUNNING:?}" || printf '%s\n' "$name" >> "$RUNNING"
+printf 'started %s\n' "$name" >> "${QCTL_LOG:?}"
 EOF
 
 cat > "$WORK/bin/qvm-prefs" <<'EOF'
@@ -101,8 +113,9 @@ printf 'removed %s\n' "$name" >> "${QCTL_LOG:?}"
 EOF
 
 chmod +x "$WORK/bin/"*
-export FAKEQ="$WORK/qubes" QCTL_LOG="$WORK/qctl.log"
+export FAKEQ="$WORK/qubes" QCTL_LOG="$WORK/qctl.log" RUNNING="$WORK/running"
 : > "$QCTL_LOG"
+printf 'sys-net\nsys-firewall\n' > "$RUNNING"
 
 zone() { env PATH="$WORK/bin:$PATH" sh "$ZONE" "$@"; }
 netvm_of() { awk -F'|' -v n="$1" '$1 == n {print $3}' "$FAKEQ"; }
@@ -115,13 +128,15 @@ else
 fi
 
 # 2. add with no attach flags creates plumbing, asks nothing (no qube
-# shares the zone's name), and touches no client.
+# shares the zone's name), touches no client -- and finishes creation by
+# starting the firewall qube, because a halted netvm refuses clients.
 if zone add tz </dev/null >"$WORK/out" 2>&1 \
 	&& grep -q 'wgq.wg-zone' "$QCTL_LOG" \
 	&& grep -q '"zone": "tz"' "$QCTL_LOG" \
+	&& grep -q 'started sys-fw-tz' "$QCTL_LOG" \
 	&& [ "$(netvm_of work)" = "sys-firewall" ] \
 	&& [ "$(netvm_of media)" = "sys-firewall" ]; then
-	ok "plain add creates the zone and attaches nothing"
+	ok "plain add creates the zone, starts its firewall, attaches nothing"
 else
 	cat "$WORK/out"; fail "plain add went wrong"
 fi
@@ -157,6 +172,17 @@ if zone add z2 --attach media,mail >"$WORK/out" 2>&1 \
 	ok "add --attach wires the named qubes"
 else
 	cat "$WORK/out"; fail "add --attach went wrong"
+fi
+
+# 5b. Attaching to a zone whose firewall was shut down since creation
+# starts it again first; the client still lands where it was pointed.
+: > "$RUNNING"
+if zone attach z2 dev >"$WORK/out" 2>&1 \
+	&& grep -q 'started sys-fw-z2' "$QCTL_LOG" \
+	&& [ "$(netvm_of dev)" = "sys-fw-z2" ]; then
+	ok "attach starts a halted zone firewall before rewiring"
+else
+	cat "$WORK/out"; fail "the halted-zone attach guard went wrong"
 fi
 
 # 6. A bad upstream is refused before anything is created.
