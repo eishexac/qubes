@@ -133,7 +133,7 @@ cmd_add() {
 			--attach)
 				# One qube, or a typed list: --attach work,media. Still
 				# only ever names the operator wrote out.
-				[ $# -ge 2 ] && [ -n "$2" ] || usage
+				if [ $# -lt 2 ] || [ -z "$2" ]; then usage; fi
 				attach_list="$attach_list $(printf '%s' "$2" | tr ',' ' ')"
 				shift 2 ;;
 			*) usage ;;
