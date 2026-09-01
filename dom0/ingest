@@ -41,11 +41,13 @@
 # reason). Signatures can prove who wrote a tree; only reading proves you
 # know what is in it. If you approve without reading, no tool can help.
 #
-# BOOTSTRAP, once, by hand -- this script is the only thing you carry in:
+# BOOTSTRAP, once, by hand -- this script is the only thing you carry in.
+# The copy lands in /tmp, which evaporates on reboot: the installed file
+# in /usr/local/bin is the only one that persists.
 #
-#     qvm-run --pass-io <qube> 'cat /path/to/qubes/dom0/ingest' > ingest
-#     less ingest                      # read all of it; it is not long
-#     sudo install -m 0755 ingest /usr/local/bin/qubes-ingest
+#     qvm-run --pass-io <qube> 'cat /path/to/qubes/dom0/ingest' > /tmp/qubes-ingest
+#     less /tmp/qubes-ingest           # read all of it; it is not long
+#     sudo install -m 0755 /tmp/qubes-ingest /usr/local/bin/qubes-ingest
 #
 # (dom0's /usr/local is ordinary storage; the template-overlay caveat that
 # applies inside qubes does not apply here.) Updating the script itself
