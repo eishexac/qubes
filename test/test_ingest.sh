@@ -216,14 +216,17 @@ else
 	cat "$WORK/out"; fail "failure handling went wrong"
 fi
 
-# 15. A plan with an unknown verb is refused whole, before any prompt.
+# 15. A plan with an unknown verb is refused whole, before any prompt --
+# and the refusal teaches the way out: a plan from a newer tree means the
+# installed tool is stale, so the message names the self-update pull.
 printf 'rm -rf /\n' > "$REPO/demo/.ingest-apply"
 run_pull yes || { cat "$WORK/out"; fail "pull of the malformed plan failed"; }
 reset_apply
 if run_apply '' ; then
 	fail "a malformed plan was accepted"
-elif grep -q 'unknown verb' "$WORK/out" && [ ! -s "$WORK/qlog" ]; then
-	ok "malformed plan refused whole, nothing ran"
+elif grep -q 'unknown verb' "$WORK/out" && [ ! -s "$WORK/qlog" ] \
+	&& grep -q 'pull <qube> dom0' "$WORK/out"; then
+	ok "malformed plan refused whole, nothing ran, self-update taught"
 else
 	cat "$WORK/out"; fail "malformed-plan refusal failed for the wrong reason"
 fi
