@@ -32,6 +32,7 @@ SOURCES := $(shell find src -name '*.py')
 SHELL_SCRIPTS := \
 	template/etc/qubes/qubes-firewall.d/50-wgq \
 	template/usr/sbin/wg-tunnel \
+	dom0/wgq-zone \
 	test/verify.sh
 
 .PHONY: all build check verify check-salt clean install version

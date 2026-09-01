@@ -2,7 +2,7 @@
 
 One tool, two roles.  Provisioning commands run in wgq-mgmt, which holds the
 account credential and reaches the network through sys-firewall; key
-handling runs in sys-vpn-<zone>, where the private key is generated and
+handling runs in sys-wgq-<zone>, where the private key is generated and
 never leaves.  dom0 is refused for every command.  The mgmt/zone split is
 enforced by possession -- the credential file lives in one qube and the key
 in the other, so a command run in the wrong qube fails on the missing
@@ -52,7 +52,7 @@ def refuse_dom0() -> None:
     if looks_like_dom0():
         raise UsageError(
             "wgq must never run in dom0.\n"
-            "Provisioning belongs in wgq-mgmt and key handling in sys-vpn-<zone>. "
+            "Provisioning belongs in wgq-mgmt and key handling in sys-wgq-<zone>. "
             "The only things this project puts in dom0 are the Salt formula and "
             "two lines in /etc/qubes/policy.d/30-wgq.policy."
         )
@@ -67,7 +67,7 @@ def require_zone(zone: str) -> str:
 
 
 def vm_for_zone(zone: str) -> str:
-    return f"sys-vpn-{require_zone(zone)}"
+    return f"sys-wgq-{require_zone(zone)}"
 
 
 def record_dir(zone: str) -> Path:
@@ -113,7 +113,7 @@ def read_pubkey(value: str | None) -> str:
         if sys.stdin.isatty():
             raise UsageError(
                 "no public key given. Pass --pubkey <key>, or pipe it in:\n"
-                "    qvm-run -p sys-vpn-work 'wgq pubkey' | wgq provision --zone work ..."
+                "    qvm-run -p sys-wgq-work 'wgq pubkey' | wgq provision --zone work ..."
             )
         value = sys.stdin.read().strip()
     assert value is not None
@@ -649,7 +649,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Leak-tight WireGuard proxy qubes for Qubes OS.",
         epilog=(
             "Provisioning commands run in wgq-mgmt; keygen/apply/switch/status "
-            "run in sys-vpn-<zone>. Nothing runs in dom0."
+            "run in sys-wgq-<zone>. Nothing runs in dom0."
         ),
     )
     parser.add_argument("--version", action="version", version=f"wgq {__version__}")
@@ -742,7 +742,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("firewall", help="apply the endpoint allowlist to a zone qube")
     p.add_argument("--zone", required=True)
-    p.add_argument("--vm", help="target qube (default: sys-vpn-<zone>)")
+    p.add_argument("--vm", help="target qube (default: sys-wgq-<zone>)")
     p.add_argument(
         "--print", dest="print_only", action="store_true",
         help="print the manual qvm-firewall block instead of applying it",

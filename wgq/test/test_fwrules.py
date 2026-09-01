@@ -74,11 +74,11 @@ class TestApiRules(unittest.TestCase):
 
 class TestManualBlock(unittest.TestCase):
     def setUp(self):
-        self.text = fwrules.qvm_firewall_block("sys-vpn-work", PEERS)
+        self.text = fwrules.qvm_firewall_block("sys-wgq-work", PEERS)
 
     def test_uses_the_four_command_sequence(self):
-        self.assertIn("qvm-firewall sys-vpn-work reset", self.text)
-        self.assertIn("qvm-firewall sys-vpn-work del --rule-no 0", self.text)
+        self.assertIn("qvm-firewall sys-wgq-work reset", self.text)
+        self.assertIn("qvm-firewall sys-wgq-work del --rule-no 0", self.text)
         self.assertEqual(self.text.count("add accept"), len(PEERS))
 
     def test_does_not_renumber_around_an_icmp_rule(self):

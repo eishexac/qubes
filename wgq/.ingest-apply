@@ -8,9 +8,11 @@ template debian-13-minimal
 # connector over qvm-run. Slow the first time.
 salt wgq.wg-template
 # The same state applied INSIDE the template: packages and files.
-salt-target wgq-debian-13 wgq.wg-template
-# Create wgq-mgmt, sys-vpn-work and sys-firewall-work.
-salt wgq.wg-qubes
+salt-target debian-13-wgq wgq.wg-template
+# Create wgq-mgmt, the provisioning qube. Zones are NOT created here:
+# they are user lifecycle, one deliberate command each --
+#     sudo /srv/salt/wgq/dom0/wgq-zone add <zone>
+salt wgq.wg-mgmt
 # OPTIONAL -- answer 's' to skip: the qrexec grant that lets 'wgq firewall'
 # apply the endpoint allowlist through a dom0 'ask' prompt. Without it, the
 # tool prints a qvm-firewall block to paste instead.

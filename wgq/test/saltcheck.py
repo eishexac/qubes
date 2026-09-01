@@ -7,32 +7,51 @@ tedious to debug over qubesctl output.
 import sys, yaml, jinja2
 
 class Pillar:
-    def get(self, key, default=None):
-        return default
+    def __init__(self, overrides=None):
+        self.overrides = overrides or {}
 
-def salt_get(name):
-    return {"pillar.get": Pillar().get}[name]
+    def get(self, key, default=None):
+        return self.overrides.get(key, default)
 
 class SaltDict(dict):
+    def __init__(self, overrides=None):
+        super().__init__()
+        self.overrides = overrides
+
     def __getitem__(self, k):
         if k == "pillar.get":
-            return Pillar().get
+            return Pillar(self.overrides).get
         raise KeyError(k)
 
 targets = {
-    "wg-template.sls": ["dom0", "wgq-debian-13"],
-    "wg-qubes.sls": ["dom0"],
+    "wg-template.sls": ["dom0", "debian-13-wgq"],
+    "wg-mgmt.sls": ["dom0"],
+    "wg-zone.sls": ["dom0"],
     "top.sls": ["dom0"],
+}
+
+# wg-zone renders a deliberate failure state when no zone is in pillar, so
+# both branches need a parse: the default render above covers the missing
+# branch; this override covers the real one.
+pillar_overrides = {
+    "wg-zone.sls": {"wgq:zone": "ztest"},
 }
 
 env = jinja2.Environment(undefined=jinja2.StrictUndefined, trim_blocks=False)
 bad = 0
 for path, ids in targets.items():
     src = open(path).read()
+    pillar_cases = [None]
+    if path in pillar_overrides:
+        pillar_cases.append(pillar_overrides[path])
     for vm_id in ids:
-        label = f"{path} (grains.id={vm_id})"
+      for overrides in pillar_cases:
+        label = f"{path} (grains.id={vm_id}"
+        label += f", pillar={overrides})" if overrides else ")"
         try:
-            rendered = env.from_string(src).render(salt=SaltDict(), grains={"id": vm_id})
+            rendered = env.from_string(src).render(
+                salt=SaltDict(overrides), grains={"id": vm_id}
+            )
         except Exception as exc:
             print(f"JINJA FAIL {label}: {exc}"); bad += 1; continue
         try:

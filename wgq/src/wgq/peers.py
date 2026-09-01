@@ -2,7 +2,7 @@
 
 The same directory shape is used in two places:
 
-  sys-vpn-<zone>   /rw/config/wg/peers/
+  sys-wgq-<zone>   /rw/config/wg/peers/
                    configs with the real private key substituted in
 
   wgq-mgmt         ~/.local/share/wgq/zones/<zone>/peers/

@@ -8,7 +8,7 @@
 ## -----------------------
 ## They let the wgq-mgmt qube read and replace the *outbound firewall rules*
 ## of any qube tagged `wgq-zone` (the Salt formula applies that tag to each
-## sys-vpn-<zone> it creates, and to nothing else).
+## sys-wgq-<zone> it creates, and to nothing else).
 ##
 ## That firewall is the layer that actually protects you.  It is enforced by
 ## the VPN qube's net qube, so it holds even if the VPN qube is compromised,
@@ -42,7 +42,7 @@
 ## ----------
 ##   1. Read the two lines below.
 ##   2. sudo cp 30-wgq.policy /etc/qubes/policy.d/30-wgq.policy
-##   3. qvm-tags sys-vpn-work list          # confirm the tag is where you think
+##   3. qvm-tags sys-wgq-work list          # confirm the tag is where you think
 ##
 ## To revoke, delete the file.  `wgq firewall` then falls back to printing a
 ## qvm-firewall command block for you to paste, and nothing else changes.

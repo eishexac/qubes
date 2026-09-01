@@ -70,6 +70,8 @@ here.
 - Client DNS reaching a resolver outside the tunnel.
 - A misconfiguration silently producing a qube that forwards in the clear.
   If the rules cannot be proven to have landed, forwarding is switched off.
+- A zone qube that is not configured yet: it forwards nothing until its
+  first `wgq switch` succeeds, rather than acting as a plain proxy.
 
 **What it does not protect against**
 
@@ -103,24 +105,24 @@ boundary; it is a correctness backstop for the common failure.
 ## Topology
 
 ```
-sys-net ── sys-firewall ─┬─ sys-vpn-work ── sys-firewall-work ── [client qubes]
+sys-net ── sys-firewall ─┬─ sys-wgq-work ── sys-fw-work ── [client qubes]
                          ├─ wgq-mgmt                             (provisioning only)
                          └─ sys-whonix                           (optional)
 ```
 
 One VPN qube per identity zone, not one qube with policy routing. That is
 forced by the topology, not a preference: all client traffic reaches the VPN
-qube appearing to come from `sys-firewall-work`, so per-client policy inside
+qube appearing to come from `sys-fw-work`, so per-client policy inside
 the VPN qube is impossible.
 
-Clients point at `sys-firewall-<zone>` permanently. Switching which VPN backs
+Clients point at `sys-fw-<zone>` permanently. Switching which VPN backs
 them is one command and touches no client:
 
 ```sh
-qvm-prefs sys-firewall-work netvm sys-vpn-other
+qvm-prefs sys-fw-work netvm sys-wgq-other
 ```
 
-Do not put a firewall qube between `sys-vpn-*` and `sys-whonix`.
+Do not put a firewall qube between `sys-wgq-*` and `sys-whonix`.
 Whonix-Gateway does not respect the qubes-firewall service, so rules on qubes
 behind it have no effect.
 
@@ -130,8 +132,8 @@ behind it have no effect.
 
 | Layer | Enforced by | Survives VPN qube compromise |
 |---|---|---|
-| `qvm-firewall sys-vpn-work` → endpoints only | `sys-firewall`, upstream | **Yes** |
-| `sys-firewall-work` | a separate Xen domain | **Yes** |
+| `qvm-firewall sys-wgq-work` → endpoints only | `sys-firewall`, upstream | **Yes** |
+| `sys-fw-work` | a separate Xen domain | **Yes** |
 | `/etc/qubes/qubes-firewall.d/50-wgq` | inside the VPN qube, at firewall start | No |
 
 ---
@@ -166,7 +168,7 @@ trusting it.
 # in dom0
 qvm-run --pass-io <qube> 'tar -C /path/to/qubes -c wgq' | sudo tar -C /srv/salt -x
 less /srv/salt/wgq/wg-template.sls
-less /srv/salt/wgq/wg-qubes.sls
+less /srv/salt/wgq/wg-mgmt.sls
 less /srv/salt/wgq/dom0/30-wgq.policy
 ```
 
@@ -174,7 +176,7 @@ less /srv/salt/wgq/dom0/30-wgq.policy
 
 ```sh
 sudo qubesctl --show-output state.apply wgq.wg-template
-sudo qubesctl --skip-dom0 --targets=wgq-debian-13 --show-output \
+sudo qubesctl --skip-dom0 --targets=debian-13-wgq --show-output \
     state.apply wgq.wg-template
 ```
 
@@ -182,13 +184,29 @@ The first invocation clones `debian-13-minimal` and bootstraps
 `qubes-mgmt-salt-vm-connector` over `qvm-run`. That step cannot be a Salt
 state: it is the package that makes a qube salt-manageable.
 
-**3. Create the qubes:**
+**3. Create the management qube:**
 
 ```sh
-sudo qubesctl --show-output state.apply wgq.wg-qubes
+sudo qubesctl --show-output state.apply wgq.wg-mgmt
 ```
 
-**4. Optionally install the policy** that lets `wgq firewall` apply the
+**4. Create a zone** — one deliberate command per identity, whenever you
+need one (zones are lifecycle, not installation):
+
+```sh
+sudo /srv/salt/wgq/dom0/wgq-zone add work
+```
+
+That builds `sys-wgq-work` + `sys-fw-work`, tags and marks them — and the
+new VPN qube **fails closed from birth**: clients behind it get nothing
+until the first `wgq switch` succeeds. Later, point clients at the zone
+with:
+
+```sh
+sudo /srv/salt/wgq/dom0/wgq-zone attach work <qube>
+```
+
+**5. Optionally install the policy** that lets `wgq firewall` apply the
 allowlist for you:
 
 ```sh
@@ -236,7 +254,7 @@ wgq status
 wgq firewall --zone work
 ```
 
-Then point a client at `sys-firewall-work` and run the verifier from it.
+Then point a client at `sys-fw-work` and run the verifier from it.
 
 ### Your own server, or any provider without an API
 
@@ -332,7 +350,7 @@ and tells you exactly what to run where. A skipped check exits non-zero.
 wgq/
 ├── dom0/30-wgq.policy      two qrexec lines; read before copying
 ├── wg-template.sls         the formula: clone + configure the template
-├── wg-qubes.sls            the formula: create the qubes
+├── wg-mgmt.sls            the formula: create the qubes
 ├── top.sls                 optional, for qubesctl top.enable
 ├── template/               files installed into the template root
 │   ├── etc/qubes/qubes-firewall.d/50-wgq

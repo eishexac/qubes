@@ -76,6 +76,14 @@ run_fw() {
 cmd_up() {
 	need_root
 	if ! configured; then
+		# A qube marked as a wgq VPN qube must not come up half-dressed:
+		# run the firewall script (which fails closed on an unconfigured
+		# qube) and fail the unit loudly. Unmarked qubes sharing the
+		# template still no-op quietly.
+		if [ -f /var/run/qubes-service/wgq-vpn ]; then
+			run_fw
+			die "no tunnel configured; 50-wgq keeps clients blocked until 'wgq switch'"
+		fi
 		info "no tunnel configured in $WG_DIR; nothing to do"
 		return 0
 	fi
