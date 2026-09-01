@@ -4,7 +4,7 @@
     Never applied bare -- the zone name arrives as pillar, normally via
     the dom0 helper:
 
-        sudo /srv/salt/wgq/dom0/wgq-zone add <zone>
+        sudo wgq zone add <zone>
 
     Topology built here, per zone:
 
@@ -37,7 +37,7 @@ wgq-zone-name-missing:
   cmd.run:
     - name: >
         echo "wgq: no zone name in pillar. Create zones with:
-        sudo /srv/salt/wgq/dom0/wgq-zone add <zone>" >&2; exit 1
+        sudo wgq zone add <zone>" >&2; exit 1
 
 {% else %}
 

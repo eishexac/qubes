@@ -6,7 +6,7 @@
     This creates ONLY wgq-mgmt, the provisioning qube. Zones are user
     lifecycle, not installation: create each one deliberately with
 
-        sudo /srv/salt/wgq/dom0/wgq-zone add <zone>
+        sudo wgq zone add <zone>
 
     which applies wgq.wg-zone for that name (sys-wgq-<zone> plus
     sys-fw-<zone>, tagged and marked). See wg-zone.sls for the topology
