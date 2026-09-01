@@ -81,8 +81,27 @@ else
 	SHA="shasum -a 256"
 fi
 
-die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
-note() { printf '%s: %s\n' "$PROG" "$*" >&2; }
+# One voice, mirrored from wgq/dom0/msg.sh -- inlined because this script
+# must remain a single file you can carry into dom0 by hand. Every level
+# goes to stderr: stdout belongs to data. Colour reaches the stream only
+# when it is a terminal, NO_COLOR is unset and TERM is not dumb; piped or
+# captured output is byte-identical to the plain form.
+colour_to() {
+	[ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ] && [ -t "$1" ]
+}
+# _say <sgr> <label> <message>
+_say() {
+	m_pre="$PROG:${2:+ $2}"
+	if [ -n "$1" ] && colour_to 2; then
+		printf '\033[%sm%s\033[0m %s\n' "$1" "$m_pre" "$3" >&2
+	else
+		printf '%s %s\n' "$m_pre" "$3" >&2
+	fi
+}
+note() { _say ''   ''         "$*"; }
+ok()   { _say '32' ''         "$*"; }
+warn() { _say '33' 'warning:' "$*"; }
+die()  { _say '31' 'error:'   "$*"; exit 1; }
 
 usage() {
 	printf 'usage: %s pull <qube> <project> [path-in-qube]\n' "$PROG" >&2
@@ -216,7 +235,7 @@ cmd_pull() {
 	fi
 
 	if diff -rq "$basis" "$stage/$project" >/dev/null 2>&1; then
-		note "$project is already exactly what $qube holds; nothing to do"
+		ok "$project is already exactly what $qube holds; nothing to do"
 		return 0
 	fi
 
@@ -229,7 +248,7 @@ cmd_pull() {
 	open_review=""
 	read -r open_review || true
 	case "$open_review" in
-		n|no) note "review skipped -- you are approving bytes you have not read" ;;
+		n|no) warn "review skipped -- you are approving bytes you have not read" ;;
 		*) $PAGER "$stage/review" ;;
 	esac
 
@@ -256,15 +275,15 @@ cmd_pull() {
 		printf 'source=%s:%s\n' "$qube" "$path"
 		printf 'tree=%s\n' "$(tree_hash "$current")"
 	} > "$RECEIPTS/$project"
-	note "installed $project; receipt written"
+	ok "installed $project; receipt written"
 
 	# Self-update through the airlock: `pull <qube> dom0` reviews this very
 	# script like any other tree; if the approved copy differs from the one
 	# running, say so instead of silently staying stale.
 	if [ -f "$current/ingest" ] && [ -f "$0" ] \
 		&& ! diff -q "$current/ingest" "$0" >/dev/null 2>&1; then
-		note "note: the reviewed copy at $current/ingest differs from the one running;"
-		note "      install it with: sudo install -m 0755 $current/ingest $0"
+		warn "the reviewed copy at $current/ingest differs from the one running;"
+		warn "install it with: sudo install -m 0755 $current/ingest $0"
 	fi
 	return 0
 }
@@ -396,7 +415,7 @@ cmd_apply() {
 				run_step "$a_project" "$a_step/$a_total" $a_line ;;
 		esac
 	done 3< "$a_plan"
-	note "apply finished for $a_project"
+	ok "apply finished for $a_project"
 }
 
 cmd_status() {

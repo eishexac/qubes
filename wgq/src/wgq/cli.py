@@ -40,6 +40,22 @@ ZONE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,20}$")
 DEFAULT_COUNT = 2
 
 
+def _colour(stream) -> bool:
+    """Colour only when a human is watching this stream.
+
+    A terminal, NO_COLOR unset, TERM not dumb -- the same discipline as
+    the dom0 tools (wgq/dom0/msg.sh): piped or captured output never
+    carries an escape code, so nothing that parses it can tell the
+    difference.
+    """
+    return (
+        os.environ.get("NO_COLOR") is None
+        and os.environ.get("TERM") != "dumb"
+        and hasattr(stream, "isatty")
+        and stream.isatty()
+    )
+
+
 def say(message: str) -> None:
     """Progress note on stderr, printed BEFORE a blocking call.
 
@@ -47,6 +63,21 @@ def say(message: str) -> None:
     means waiting, never wondering whether the tool hung.
     """
     print(message, file=sys.stderr, flush=True)
+
+
+def good(message: str) -> None:
+    """Success line on stdout, green when a human is watching."""
+    if _colour(sys.stdout):
+        message = f"\033[32m{message}\033[0m"
+    print(message)
+
+
+def fail(message: str) -> None:
+    """Error line on stderr; the wgq: error: prefix goes red on a tty."""
+    prefix = "wgq: error:"
+    if _colour(sys.stderr):
+        prefix = f"\033[31m{prefix}\033[0m"
+    print(f"{prefix} {message}", file=sys.stderr)
 
 
 # -- environment guards -----------------------------------------------------
@@ -220,7 +251,7 @@ def cmd_provision(args: argparse.Namespace) -> int:
     for peer in peers:
         target.save(peer)
 
-    print(f"wrote {len(peers)} peer(s) to {bundle}")
+    good(f"wrote {len(peers)} peer(s) to {bundle}")
     for peer in peers:
         print(f"  {peer.name:<18} {peer.endpoint:<24} dns={peer.dns}")
     if stale:
@@ -306,7 +337,7 @@ def _store_peer(zone: str, peer: Peer) -> int:
     target = PeerDir(record_dir(zone))
     target.ensure()
     target.save(peer)
-    print(f"recorded {peer.name} in {target.root}")
+    good(f"recorded {peer.name} in {target.root}")
     print(f"  endpoint {peer.endpoint}   resolver {peer.dns}   address {peer.address}")
     # gethostname() rather than a printed $(hostname): QubesIncoming is
     # named after the sending qube, and the command runs in the receiver.
@@ -535,7 +566,8 @@ def cmd_firewall(args: argparse.Namespace) -> int:
             "sent:\n" + fwrules.describe(rules)
             + "\nread back:\n" + fwrules.describe(applied)
         )
-    print(f"\napplied, and the read-back matches. {vm} now enforces:")
+    print()
+    good(f"applied, and the read-back matches. {vm} now enforces:")
     for line in applied:
         print(f"  {line}")
     return 0
@@ -563,7 +595,7 @@ def cmd_account(args: argparse.Namespace) -> int:
 def cmd_revoke(args: argparse.Namespace) -> int:
     provider = _authenticated(args)
     provider.revoke(require_wg_key(args.pubkey, "public key"))
-    print("revoked; the device slot is free")
+    good("revoked; the device slot is free")
     return 0
 
 
@@ -573,7 +605,7 @@ def cmd_rotate(args: argparse.Namespace) -> int:
         require_wg_key(args.old_pubkey, "current public key"),
         require_wg_key(args.pubkey, "new public key"),
     )
-    print(f"rotated in place; address is now {address}")
+    good(f"rotated in place; address is now {address}")
     print(
         "Rotating in place needs no free device slot, which is why it works "
         "on a full account where delete-then-create would not.",
@@ -622,7 +654,7 @@ def cmd_pubkey(args: argparse.Namespace) -> int:
 
 def cmd_apply(args: argparse.Namespace) -> int:
     installed = store.apply_bundle(Path(args.bundle))
-    print(f"installed {len(installed)} peer(s): {', '.join(installed)}")
+    good(f"installed {len(installed)} peer(s): {', '.join(installed)}")
     active = store.active()
     if active is None:
         print(f"\nNo active peer yet. Choose one:\n    sudo wgq switch {installed[0]}")
@@ -638,7 +670,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
 
 def cmd_switch(args: argparse.Namespace) -> int:
     store.set_active(args.peer)
-    print(f"active peer is now {args.peer}")
+    good(f"active peer is now {args.peer}")
     print(f"firewall: {store.firewall_state()}")
     return 0
 
@@ -826,19 +858,19 @@ def main(argv: list[str] | None = None) -> int:
         refuse_dom0()
         return int(args.func(args))
     except WgqError as exc:
-        print(f"wgq: {exc}", file=sys.stderr)
+        fail(str(exc))
         return 1
     except NotImplementedError as exc:
         # Optional provider capabilities (devices, revoke, rotate, account)
         # raise this with a message naming the provider; the promise in
         # providers/base.py is that it surfaces as one line, not a traceback.
-        print(f"wgq: {exc}", file=sys.stderr)
+        fail(str(exc))
         return 1
     except (OSError, UnicodeDecodeError) as exc:
         # Filesystem and encoding surprises (missing file, permission
         # denied, a credential file with a stray byte) get one readable
         # line, not a traceback.
-        print(f"wgq: {exc}", file=sys.stderr)
+        fail(str(exc))
         return 1
     except KeyboardInterrupt:
         print("\nwgq: interrupted", file=sys.stderr)
