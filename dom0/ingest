@@ -281,7 +281,10 @@ validate_step() {
 			[ $# -eq 1 ] || die "$v_plan:$v_line: 'template' takes exactly one template name"
 			check_token "$v_plan:$v_line" "$1" ;;
 		*)
-			die "$v_plan:$v_line: unknown verb '$v_verb' (known: salt, salt-target, policy, template)" ;;
+			die "$v_plan:$v_line: unknown verb '$v_verb' (this tool knows: salt, salt-target, policy, template).
+If the plan comes from a newer tree than this installed tool, update the tool through its own airlock:
+    $PROG pull <qube> dom0 <repo-path>
+and follow the install note it prints." ;;
 	esac
 }
 
