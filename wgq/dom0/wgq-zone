@@ -1,34 +1,40 @@
 #!/bin/sh
 #
-# wgq-zone - zone lifecycle, from dom0, one deliberate command per act.
+# wgq-zone - zone lifecycle, from dom0, one deliberate act per command.
 #
-#     sudo /srv/salt/wgq/dom0/wgq-zone add <zone>
-#         create sys-wgq-<zone> + sys-fw-<zone> (tagged, marked, wired)
+#     wgq-zone add <zone> [--upstream <netvm>] [--attach <qube>] ...
+#                         [--attach-all] [--no-attach]
+#     wgq-zone attach <zone> <qube>
+#     wgq-zone detach <qube> [netvm]
+#     wgq-zone list
+#     wgq-zone remove <zone>
 #
-#     sudo /srv/salt/wgq/dom0/wgq-zone attach <zone> <qube>
-#         point a client qube at the zone's firewall
+# The tool supports every topology -- one zone for everything, one per
+# identity, a dedicated infra zone -- and decides none of them: every
+# attachment is explicit. `add` with no attach flags asks interactively
+# (including the obvious question when a qube shares the zone's name);
+# moving a qube that already belongs to another zone always requires a
+# confirmation, because crossing zones is never a side effect.
 #
-# Zones are user lifecycle, not installation: the formula's apply step
-# creates only infrastructure (the template and wgq-mgmt), and this is the
-# tool that makes creating an identity zone one visible command instead of
-# a pillar edit. It runs in dom0 because creating qubes and rewiring
-# netvms is dom0 authority on purpose -- granting those powers to a qube
-# is exactly what this project refuses to do.
-#
-# Removal stays manual, as destruction should:
-#     qvm-remove sys-fw-<zone>; qvm-remove sys-wgq-<zone>
+# This runs in dom0 because creating qubes and rewiring netvms is dom0
+# authority on purpose: granting those powers to a qube is exactly what
+# this project refuses to do.
 
 set -eu
 
 PROG=${0##*/}
 
 usage() {
-	printf 'usage: %s add <zone>\n' "$PROG" >&2
+	printf 'usage: %s add <zone> [--upstream <netvm>] [--attach <qube>]... [--attach-all] [--no-attach]\n' "$PROG" >&2
 	printf '       %s attach <zone> <qube>\n' "$PROG" >&2
+	printf '       %s detach <qube> [netvm]\n' "$PROG" >&2
+	printf '       %s list\n' "$PROG" >&2
+	printf '       %s remove <zone>\n' "$PROG" >&2
 	exit 2
 }
 
-die() { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
+die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
+note() { printf '%s: %s\n' "$PROG" "$*"; }
 
 check_zone() {
 	# Mirrors the wgq CLI's zone rule; 21 chars keeps sys-wgq-/sys-fw-
@@ -39,23 +45,201 @@ check_zone() {
 	[ ${#1} -le 21 ] || die "zone name '$1' is longer than 21 characters"
 }
 
+check_qube_name() {
+	case "$1" in
+		''|*[!A-Za-z0-9_.-]*) die "unusable qube name '$1'" ;;
+	esac
+}
+
+zone_exists() { qvm-check --quiet "sys-fw-$1" 2>/dev/null; }
+
+# Every qube that reaches the network and is not zone plumbing itself.
+# Used only to offer candidates; nothing is ever attached from here
+# without the operator naming it or explicitly saying "all".
+client_candidates() {
+	qvm-ls --raw-data --fields name,class,netvm 2>/dev/null \
+	| while IFS='|' read -r c_name c_class c_netvm; do
+		case "$c_class" in AppVM|StandaloneVM) ;; *) continue ;; esac
+		case "$c_netvm" in ''|-|None) continue ;; esac
+		case "$c_name" in sys-wgq-*|sys-fw-*) continue ;; esac
+		if qvm-prefs "$c_name" provides_network 2>/dev/null | grep -qi true; then
+			continue
+		fi
+		printf '%s\n' "$c_name"
+	done
+}
+
+current_netvm() { qvm-prefs "$1" netvm 2>/dev/null || printf '' ; }
+
+# Attach one qube to a zone. Crossing out of another zone is a decision,
+# so it always asks; same-zone re-attach is a quiet no-op.
+attach_qube() {
+	a_zone=$1 a_qube=$2
+	check_qube_name "$a_qube"
+	qvm-check --quiet "$a_qube" 2>/dev/null || die "no such qube '$a_qube'"
+	a_now=$(current_netvm "$a_qube")
+	if [ "$a_now" = "sys-fw-$a_zone" ]; then
+		note "$a_qube is already attached to zone $a_zone"
+		return 0
+	fi
+	case "$a_now" in
+		sys-fw-*)
+			a_from=${a_now#sys-fw-}
+			printf '%s: %s currently belongs to zone %s. Move it to %s? [y/N] ' \
+				"$PROG" "$a_qube" "$a_from" "$a_zone"
+			a_ans=""
+			read -r a_ans || true
+			case "$a_ans" in
+				y|yes) ;;
+				*) note "left $a_qube in zone $a_from"; return 0 ;;
+			esac
+			;;
+	esac
+	qvm-prefs "$a_qube" netvm "sys-fw-$a_zone"
+	note "$a_qube now reaches the network only through zone $a_zone"
+}
+
+# The interactive attach dialogue after `add` without attach flags: the
+# name-match question first, then which/all/none.
+attach_dialogue() {
+	d_zone=$1
+	if qvm-check --quiet "$d_zone" 2>/dev/null; then
+		printf '%s: a qube named %s exists. Attach it to this zone? [y/N] ' \
+			"$PROG" "$d_zone"
+		d_ans=""
+		read -r d_ans || true
+		case "$d_ans" in
+			y|yes) attach_qube "$d_zone" "$d_zone" ;;
+		esac
+	fi
+	printf '%s: attach qubes to zone %s? Names separated by spaces, "all" for\n' "$PROG" "$d_zone"
+	printf 'every networked qube, or Enter for none: '
+	d_reply=""
+	read -r d_reply || true
+	case "$d_reply" in
+		'') note "no further qubes attached; later: $PROG attach $d_zone <qube>" ;;
+		all)
+			for d_q in $(client_candidates); do
+				attach_qube "$d_zone" "$d_q"
+			done
+			;;
+		*)
+			for d_q in $d_reply; do
+				attach_qube "$d_zone" "$d_q"
+			done
+			;;
+	esac
+}
+
+cmd_add() {
+	[ $# -ge 1 ] || usage
+	z=$1
+	shift
+	check_zone "$z"
+	upstream=""
+	attach_mode="ask"
+	attach_list=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--upstream)
+				[ $# -ge 2 ] || usage
+				check_qube_name "$2"
+				upstream=$2
+				shift 2 ;;
+			--attach)
+				[ $# -ge 2 ] || usage
+				attach_mode="list"
+				attach_list="$attach_list $2"
+				shift 2 ;;
+			--attach-all) attach_mode="all"; shift ;;
+			--no-attach)  attach_mode="none"; shift ;;
+			*) usage ;;
+		esac
+	done
+
+	pillar="{\"wgq\": {\"zone\": \"$z\"}}"
+	if [ -n "$upstream" ]; then
+		qvm-check --quiet "$upstream" 2>/dev/null || die "no such upstream netvm '$upstream'"
+		pillar="{\"wgq\": {\"zone\": \"$z\", \"upstream\": \"$upstream\"}}"
+	fi
+	qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
+	note "zone $z is up (sys-wgq-$z + sys-fw-$z)"
+
+	case "$attach_mode" in
+		none) note "no qubes attached; later: $PROG attach $z <qube>" ;;
+		all)
+			for q in $(client_candidates); do
+				attach_qube "$z" "$q"
+			done
+			;;
+		list)
+			for q in $attach_list; do
+				attach_qube "$z" "$q"
+			done
+			;;
+		ask) attach_dialogue "$z" ;;
+	esac
+}
+
+cmd_attach() {
+	[ $# -eq 2 ] || usage
+	check_zone "$1"
+	zone_exists "$1" || die "zone '$1' does not exist; create it with: $PROG add $1"
+	attach_qube "$1" "$2"
+}
+
+cmd_detach() {
+	[ $# -ge 1 ] || usage
+	check_qube_name "$1"
+	qvm-check --quiet "$1" 2>/dev/null || die "no such qube '$1'"
+	target=${2:-$(qubes-prefs default_netvm 2>/dev/null || printf 'sys-firewall')}
+	check_qube_name "$target"
+	case "$(current_netvm "$1")" in
+		sys-fw-*) ;;
+		*) die "$1 is not attached to any wgq zone" ;;
+	esac
+	qvm-prefs "$1" netvm "$target"
+	note "$1 detached; its network now comes from $target"
+}
+
+cmd_list() {
+	found=0
+	for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
+		found=1
+		lz=${fw#sys-fw-}
+		clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
+			| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
+		printf '%-21s  vpn=sys-wgq-%s  clients: %s\n' "$lz" "$lz" "${clients:-none}"
+	done
+	[ "$found" -eq 1 ] || note "no zones exist; create one with: $PROG add <zone>"
+}
+
+cmd_remove() {
+	[ $# -eq 1 ] || usage
+	check_zone "$1"
+	zone_exists "$1" || die "zone '$1' does not exist"
+	rclients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
+		| awk -F'|' -v fw="sys-fw-$1" '$2 == fw {print $1}' | tr '\n' ' ')
+	if [ -n "${rclients% }" ]; then
+		die "qubes still attached to zone '$1': ${rclients% }. Detach them first: $PROG detach <qube>"
+	fi
+	printf '%s: this DESTROYS sys-fw-%s and sys-wgq-%s, including the zone'\''s\n' "$PROG" "$1" "$1"
+	printf 'private key. Type the zone name to confirm: '
+	r_ans=""
+	read -r r_ans || true
+	[ "$r_ans" = "$1" ] || die "confirmation did not match; nothing removed"
+	qvm-shutdown --wait "sys-fw-$1" "sys-wgq-$1" 2>/dev/null || true
+	qvm-remove -f "sys-fw-$1"
+	qvm-remove -f "sys-wgq-$1"
+	note "zone $1 removed. Its registered key still holds a provider device slot;"
+	note "revoke it (wgq revoke / provider website) if it was ever provisioned."
+}
+
 case "${1:-}" in
-	add)
-		[ $# -eq 2 ] || usage
-		check_zone "$2"
-		qubesctl --show-output state.apply wgq.wg-zone pillar="{\"wgq\": {\"zone\": \"$2\"}}"
-		printf '\n%s: zone %s is up. Point clients at it with:\n' "$PROG" "$2"
-		printf '    %s attach %s <qube>\n' "$PROG" "$2"
-		;;
-	attach)
-		[ $# -eq 3 ] || usage
-		check_zone "$2"
-		qvm-check --quiet "sys-fw-$2" || die "zone '$2' does not exist; create it with: $PROG add $2"
-		qvm-check --quiet "$3" || die "no such qube '$3'"
-		qvm-prefs "$3" netvm "sys-fw-$2"
-		printf '%s: %s now reaches the network only through zone %s\n' "$PROG" "$3" "$2"
-		;;
-	*)
-		usage
-		;;
+	add)    shift; cmd_add "$@" ;;
+	attach) shift; cmd_attach "$@" ;;
+	detach) shift; cmd_detach "$@" ;;
+	list)   shift; cmd_list "$@" ;;
+	remove) shift; cmd_remove "$@" ;;
+	*)      usage ;;
 esac

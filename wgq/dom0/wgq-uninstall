@@ -1,0 +1,77 @@
+#!/bin/sh
+#
+# wgq-uninstall - take wgq off this machine, one confirmed step at a time.
+#
+#     sudo /srv/salt/wgq/dom0/wgq-uninstall
+#
+# Removal order: zones (refused while any client is still attached, so no
+# qube ever loses its netvm as a side effect), then wgq-mgmt, then the
+# template (only if nothing else uses it), then the policy grant. The
+# reviewed tree in /srv/salt is left for you to delete by hand -- the
+# uninstaller does not remove the evidence of what it was.
+
+set -eu
+
+PROG=${0##*/}
+TPL=${WGQ_TEMPLATE:-debian-13-wgq}
+
+die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
+note() { printf '%s: %s\n' "$PROG" "$*"; }
+
+step() {
+	printf '\n--> %s\nRun this step? [y = run / s = skip / q = stop] ' "$1"
+	s_ans=""
+	read -r s_ans || s_ans=q
+	case "$s_ans" in
+		y|yes) return 0 ;;
+		s|skip) note "skipped"; return 1 ;;
+		*) die "stopped; later steps not run" ;;
+	esac
+}
+
+printf '%s: this walks the removal of everything wgq created. Type "uninstall" to begin: ' "$PROG"
+ans=""
+read -r ans || true
+[ "$ans" = "uninstall" ] || die "confirmation did not match; nothing touched"
+
+# Zones first; a zone with attached clients refuses, deliberately.
+for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
+	zone=${fw#sys-fw-}
+	clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
+		| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
+	if [ -n "${clients% }" ]; then
+		die "zone '$zone' still has attached qubes: ${clients% }. Detach them first (wgq-zone detach <qube>), then re-run."
+	fi
+	if step "remove zone $zone (sys-fw-$zone + sys-wgq-$zone, including its private key)"; then
+		qvm-shutdown --wait "sys-fw-$zone" "sys-wgq-$zone" 2>/dev/null || true
+		qvm-remove -f "sys-fw-$zone"
+		qvm-remove -f "sys-wgq-$zone"
+		note "zone $zone removed; revoke its registered key at the provider if it was provisioned"
+	fi
+done
+
+if qvm-check --quiet wgq-mgmt 2>/dev/null; then
+	if step "remove wgq-mgmt (holds the provider account credential file)"; then
+		qvm-shutdown --wait wgq-mgmt 2>/dev/null || true
+		qvm-remove -f wgq-mgmt
+	fi
+fi
+
+if qvm-check --quiet "$TPL" 2>/dev/null; then
+	users=$(qvm-ls --raw-data --fields name,template 2>/dev/null \
+		| awk -F'|' -v t="$TPL" '$2 == t {print $1}' | tr '\n' ' ')
+	if [ -n "${users% }" ]; then
+		note "template $TPL still backs: ${users% } -- leaving it in place"
+	elif step "remove template $TPL"; then
+		qvm-remove -f "$TPL"
+	fi
+fi
+
+if [ -f /etc/qubes/policy.d/30-wgq.policy ]; then
+	if step "remove the qrexec grant /etc/qubes/policy.d/30-wgq.policy"; then
+		rm -f /etc/qubes/policy.d/30-wgq.policy
+	fi
+fi
+
+printf '\n%s: done. The reviewed tree remains; remove it yourself with:\n' "$PROG"
+printf '    sudo rm -r /srv/salt/wgq /srv/salt/.ingest-receipts/wgq\n'

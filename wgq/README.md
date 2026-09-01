@@ -286,6 +286,49 @@ Provider-sourced endpoints are always required to be publicly routable.
 
 ---
 
+## Zones
+
+`wgq-zone`, in dom0 from the installed tree, is the whole lifecycle:
+
+```
+wgq-zone add <zone> [--upstream <netvm>] [--attach <qube>] [--attach-all] [--no-attach]
+wgq-zone attach <zone> <qube>        wgq-zone detach <qube> [netvm]
+wgq-zone list                        wgq-zone remove <zone>
+```
+
+Every attachment is explicit: bare `add` asks (including the obvious
+question when a qube shares the zone's name), moving a qube between zones
+always requires a yes, and `remove` refuses while any client is still
+attached. The tool imposes no topology — all of these are legitimate:
+
+- **one zone, everything attached** (`--attach-all`): one peer, one exit,
+  the simple mental model
+- **one zone per identity**: the reason zones exist
+- **a dedicated infra zone** for system traffic, separate from identities
+
+**System services**, if you want them tunnelled, point at a zone's
+firewall qube like anything else — picking *which* zone is the decision
+that matters, and it is yours:
+
+```sh
+qvm-service sys-fw-<zone> qubes-updates-proxy on   # template updates
+# /etc/qubes/policy.d/30-user.policy:
+#   qubes.UpdatesProxy * @type:TemplateVM @default allow target=sys-fw-<zone>
+qubes-prefs updatevm <qube-behind-the-zone>        # dom0 updates
+qvm-prefs sys-whonix netvm sys-fw-<zone>           # tor over vpn
+```
+
+Leave `clockvm` on `sys-net`: WireGuard handshakes need sane time, and a
+clock that needs the tunnel that needs the clock can wedge a cold boot.
+Everything routed through a zone inherits fail-closed — tunnel down means
+those services stop until `wgq switch` succeeds.
+
+Full teardown is `wgq-uninstall` (same dom0 directory): zones first
+(refusing while clients are attached), then wgq-mgmt, template, policy —
+each step confirmed.
+
+---
+
 ## Verify
 
 This is the part nobody ships, and it matters more than the rest. Run it from
