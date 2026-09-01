@@ -291,18 +291,21 @@ Provider-sourced endpoints are always required to be publicly routable.
 `wgq-zone`, in dom0 from the installed tree, is the whole lifecycle:
 
 ```
-wgq-zone add <zone> [--upstream <netvm>] [--attach <qube>] [--attach-all] [--no-attach]
+wgq-zone add <zone> [--upstream <netvm>] [--attach <qube>[,<qube>...]]...
 wgq-zone attach <zone> <qube>        wgq-zone detach <qube> [netvm]
 wgq-zone list                        wgq-zone remove <zone>
 ```
 
-Every attachment is explicit: bare `add` asks (including the obvious
-question when a qube shares the zone's name), moving a qube between zones
-always requires a yes, and `remove` refuses while any client is still
-attached. The tool imposes no topology — all of these are legitimate:
+The only qubes whose netvm ever changes are the ones you typed — there is
+no discovery and no "all"; a sweep of "networked qubes" would eventually
+rewire plumbing it does not understand. `add` asks exactly one question
+of its own (attach the qube that shares the zone's name?), moving a qube
+between zones always requires a yes, and `remove` refuses while any
+client is still attached. The tool imposes no topology — all of these
+are legitimate:
 
-- **one zone, everything attached** (`--attach-all`): one peer, one exit,
-  the simple mental model
+- **one zone, everything attached** (`--attach work,media,...` — a typed
+  list, not a discovered one): one peer, one exit, the simple mental model
 - **one zone per identity**: the reason zones exist
 - **a dedicated infra zone** for system traffic, separate from identities
 
