@@ -1,5 +1,9 @@
 # wgq install plan, run step by step by `qubes-ingest apply wgq`.
 # Verbs are interpreted by the ingest script; nothing here is shell.
+# Base template first: skipped automatically when already installed;
+# otherwise qvm-template pulls the OFFICIAL debian-13-minimal, verified
+# against ITL's keys -- the trust anchor everything here already rests on.
+template debian-13-minimal
 # Build the template: clones debian-13-minimal and bootstraps the salt
 # connector over qvm-run. Slow the first time.
 salt wgq.wg-template
