@@ -22,6 +22,14 @@ if (cd "$ROOT" && sh bootstrap.sh wgq) >"$out" 2>&1; then
 	else
 		cat "$out"; fail "bootstrap output is missing pieces"
 	fi
+	# The payload dom0 pulls must hold no undeclared binaries: the checks
+	# above ran the test suite, so bytecode droppings existed -- bootstrap
+	# must have scrubbed them, or the ingest scan will refuse the tree.
+	if find "$ROOT/wgq" -type d -name __pycache__ | grep -q .; then
+		fail "bootstrap left __pycache__ in the project tree"
+	else
+		ok "project tree left clean of bytecode droppings"
+	fi
 else
 	cat "$out"; fail "bootstrap failed on a healthy tree"
 fi

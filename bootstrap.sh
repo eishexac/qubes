@@ -52,6 +52,11 @@ make -C "$PROJECT" check
 printf '\n== %s: build and verify (must be deterministic) ==\n' "$PROJECT"
 make -C "$PROJECT" verify
 
+# The test run leaves __pycache__ droppings in the tree; they are binaries
+# the ingest scan would rightly refuse, and dom0 has no use for them. The
+# artifact itself is already built and about to be hashed.
+find "$PROJECT" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
 if command -v sha256sum >/dev/null 2>&1; then SHA=sha256sum; else SHA="shasum -a 256"; fi
 # In a subshell with explicit fallbacks, so a project without artifacts
 # reports "none" instead of tripping set -e.
