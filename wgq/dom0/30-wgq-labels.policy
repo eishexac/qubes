@@ -1,0 +1,16 @@
+# wgq: the wgq label namespace belongs to dom0 alone.
+#
+# Labels are created and removed through the Admin API, and the qrexec
+# argument of those calls IS the label name -- so these rules pin wgq's
+# own labels by name. The API's default is already deny for every VM;
+# what these lines add is permanence: sorted at 30, they keep matching
+# first even if a management qube is someday granted broad
+# admin.label.* powers by a later-sorted allow. dom0 itself is not
+# subject to policy, which is the point -- only actions taken in dom0
+# can shape wgq's identity.
+admin.label.Create +wgq * @adminvm deny notify=yes
+admin.label.Remove +wgq * @adminvm deny notify=yes
+admin.label.Create +wgq-fw * @adminvm deny notify=yes
+admin.label.Remove +wgq-fw * @adminvm deny notify=yes
+admin.label.Create +wgq-mgmt * @adminvm deny notify=yes
+admin.label.Remove +wgq-mgmt * @adminvm deny notify=yes
