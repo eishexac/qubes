@@ -89,6 +89,14 @@ attach_qube() {
 			esac
 			;;
 	esac
+	# The same guard `add` ends with: a halted netvm refuses clients, and
+	# the zone qubes never autostart, so a zone shut down since creation
+	# must come back up before the rewire.
+	if ! qvm-check --running --quiet "sys-fw-$a_zone" 2>/dev/null; then
+		note "starting sys-fw-$a_zone first..."
+		qvm-start --skip-if-running "sys-fw-$a_zone" \
+			|| die "sys-fw-$a_zone did not start; $a_qube was not moved"
+	fi
 	qvm-prefs "$a_qube" netvm "sys-fw-$a_zone"
 	note "$a_qube now reaches the network only through zone $a_zone"
 }
@@ -147,6 +155,14 @@ cmd_add() {
 	fi
 	qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
 	note "zone $z is up ($(vpn_name "$z") + sys-fw-$z)"
+
+	# Creation ends with the plumbing RUNNING: Qubes only assigns clients
+	# to a netvm that is up, so a zone left halted would refuse its first
+	# attach. This is the one-time completion of `add`, not a boot policy
+	# -- autostart stays off on purpose.
+	note "starting sys-fw-$z (boots $(vpn_name "$z") behind it)..."
+	qvm-start --skip-if-running "sys-fw-$z" \
+		|| die "sys-fw-$z did not start; 'attach' will retry when you use it"
 
 	for q in $attach_list; do
 		attach_qube "$z" "$q"

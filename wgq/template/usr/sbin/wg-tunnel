@@ -7,8 +7,11 @@
 # per-peer file name) is what lets the firewall rules name the tunnel
 # statically; see 50-wgq.
 #
-# Exits 0 when this qube has no tunnel configured, so that qubes sharing the
-# template but not acting as VPN qubes no-op instead of failing at boot.
+# Exits 0 when this qube has no tunnel configured -- for qubes sharing the
+# template but not acting as VPN qubes, and equally for a marked VPN qube
+# before its first 'wgq switch': that is a normal moment in the lifecycle,
+# and 50-wgq already fails it closed. Blocking clients is the firewall
+# script's job; a red unit in systemctl would add noise, not safety.
 #
 # Driven by wg-tunnel.service.  Safe to run by hand as root.
 
@@ -76,13 +79,14 @@ run_fw() {
 cmd_up() {
 	need_root
 	if ! configured; then
-		# A qube marked as a wgq VPN qube must not come up half-dressed:
-		# run the firewall script (which fails closed on an unconfigured
-		# qube) and fail the unit loudly. Unmarked qubes sharing the
-		# template still no-op quietly.
+		# A marked VPN qube without a tunnel yet: run the firewall script
+		# so it fails closed (forwarding off, clients dark), say what is
+		# going on, and exit clean -- the kill switch is 50-wgq, not a
+		# failed unit. Unmarked qubes sharing the template no-op quietly.
 		if [ -f /var/run/qubes-service/wgq-vpn ]; then
 			run_fw
-			die "no tunnel configured; 50-wgq keeps clients blocked until 'wgq switch'"
+			info "no tunnel configured yet; 50-wgq keeps clients blocked until 'wgq switch'"
+			return 0
 		fi
 		info "no tunnel configured in $WG_DIR; nothing to do"
 		return 0
