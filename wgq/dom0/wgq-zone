@@ -2,19 +2,22 @@
 #
 # wgq-zone - zone lifecycle, from dom0, one deliberate act per command.
 #
-#     wgq-zone add <zone> [--upstream <netvm>] [--attach <qube>] ...
-#                         [--attach-all] [--no-attach]
+#     wgq-zone add <zone> [--upstream <netvm>] [--attach <qube>[,<qube>...]] ...
 #     wgq-zone attach <zone> <qube>
 #     wgq-zone detach <qube> [netvm]
 #     wgq-zone list
 #     wgq-zone remove <zone>
 #
 # The tool supports every topology -- one zone for everything, one per
-# identity, a dedicated infra zone -- and decides none of them: every
-# attachment is explicit. `add` with no attach flags asks interactively
-# (including the obvious question when a qube shares the zone's name);
-# moving a qube that already belongs to another zone always requires a
-# confirmation, because crossing zones is never a side effect.
+# identity, a dedicated infra zone -- and decides none of them: the only
+# qubes whose netvm ever changes are the ones typed on the command line.
+# There is no discovery, no "all", no sweep; a tool that enumerates
+# "networked qubes" for you will eventually rewire plumbing it does not
+# understand (it once grabbed Whonix's own qubes). The single exception
+# is one question, not a search: when a qube shares the zone's name,
+# `add` asks about that qube and no other. Moving a qube that already
+# belongs to another zone always requires a confirmation, because
+# crossing zones is never a side effect.
 #
 # This runs in dom0 because creating qubes and rewiring netvms is dom0
 # authority on purpose: granting those powers to a qube is exactly what
@@ -25,7 +28,7 @@ set -eu
 PROG=${0##*/}
 
 usage() {
-	printf 'usage: %s add <zone> [--upstream <netvm>] [--attach <qube>]... [--attach-all] [--no-attach]\n' "$PROG" >&2
+	printf 'usage: %s add <zone> [--upstream <netvm>] [--attach <qube>[,<qube>...]]...\n' "$PROG" >&2
 	printf '       %s attach <zone> <qube>\n' "$PROG" >&2
 	printf '       %s detach <qube> [netvm]\n' "$PROG" >&2
 	printf '       %s list\n' "$PROG" >&2
@@ -60,22 +63,6 @@ vpn_name() {
 	if [ "$1" = wgq ]; then printf 'sys-wgq\n'; else printf 'sys-wgq-%s\n' "$1"; fi
 }
 
-# Every qube that reaches the network and is not zone plumbing itself.
-# Used only to offer candidates; nothing is ever attached from here
-# without the operator naming it or explicitly saying "all".
-client_candidates() {
-	qvm-ls --raw-data --fields name,class,netvm 2>/dev/null \
-	| while IFS='|' read -r c_name c_class c_netvm; do
-		case "$c_class" in AppVM|StandaloneVM) ;; *) continue ;; esac
-		case "$c_netvm" in ''|-|None) continue ;; esac
-		case "$c_name" in sys-wgq|sys-wgq-*|sys-fw-*) continue ;; esac
-		if qvm-prefs "$c_name" provides_network 2>/dev/null | grep -qi true; then
-			continue
-		fi
-		printf '%s\n' "$c_name"
-	done
-}
-
 current_netvm() { qvm-prefs "$1" netvm 2>/dev/null || printf '' ; }
 
 # Attach one qube to a zone. Crossing out of another zone is a decision,
@@ -106,35 +93,19 @@ attach_qube() {
 	note "$a_qube now reaches the network only through zone $a_zone"
 }
 
-# The interactive attach dialogue after `add` without attach flags: the
-# name-match question first, then which/all/none.
-attach_dialogue() {
-	d_zone=$1
-	if qvm-check --quiet "$d_zone" 2>/dev/null; then
-		printf '%s: a qube named %s exists. Attach it to this zone? [y/N] ' \
-			"$PROG" "$d_zone"
-		d_ans=""
-		read -r d_ans || true
-		case "$d_ans" in
-			y|yes) attach_qube "$d_zone" "$d_zone" ;;
-		esac
-	fi
-	printf '%s: attach qubes to zone %s? Names separated by spaces, "all" for\n' "$PROG" "$d_zone"
-	printf 'every networked qube, or Enter for none: '
-	d_reply=""
-	read -r d_reply || true
-	case "$d_reply" in
-		'') note "no further qubes attached; later: $PROG attach $d_zone <qube>" ;;
-		all)
-			for d_q in $(client_candidates); do
-				attach_qube "$d_zone" "$d_q"
-			done
-			;;
-		*)
-			for d_q in $d_reply; do
-				attach_qube "$d_zone" "$d_q"
-			done
-			;;
+# The one question `add` asks on its own: a qube sharing the zone's name
+# is an obvious candidate, and the question names that single qube, never
+# a list nothing was typed for. Skipped when it is already attached.
+offer_name_match() {
+	o_zone=$1
+	qvm-check --quiet "$o_zone" 2>/dev/null || return 0
+	[ "$(current_netvm "$o_zone")" = "sys-fw-$o_zone" ] && return 0
+	printf '%s: a qube named %s exists. Attach it to this zone? [y/N] ' \
+		"$PROG" "$o_zone"
+	o_ans=""
+	read -r o_ans || true
+	case "$o_ans" in
+		y|yes) attach_qube "$o_zone" "$o_zone" ;;
 	esac
 }
 
@@ -151,7 +122,6 @@ cmd_add() {
 	fi
 	check_zone "$z"
 	upstream=""
-	attach_mode="ask"
 	attach_list=""
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -161,12 +131,11 @@ cmd_add() {
 				upstream=$2
 				shift 2 ;;
 			--attach)
-				[ $# -ge 2 ] || usage
-				attach_mode="list"
-				attach_list="$attach_list $2"
+				# One qube, or a typed list: --attach work,media. Still
+				# only ever names the operator wrote out.
+				[ $# -ge 2 ] && [ -n "$2" ] || usage
+				attach_list="$attach_list $(printf '%s' "$2" | tr ',' ' ')"
 				shift 2 ;;
-			--attach-all) attach_mode="all"; shift ;;
-			--no-attach)  attach_mode="none"; shift ;;
 			*) usage ;;
 		esac
 	done
@@ -179,20 +148,11 @@ cmd_add() {
 	qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
 	note "zone $z is up ($(vpn_name "$z") + sys-fw-$z)"
 
-	case "$attach_mode" in
-		none) note "no qubes attached; later: $PROG attach $z <qube>" ;;
-		all)
-			for q in $(client_candidates); do
-				attach_qube "$z" "$q"
-			done
-			;;
-		list)
-			for q in $attach_list; do
-				attach_qube "$z" "$q"
-			done
-			;;
-		ask) attach_dialogue "$z" ;;
-	esac
+	for q in $attach_list; do
+		attach_qube "$z" "$q"
+	done
+	offer_name_match "$z"
+	note "attach clients with: $PROG attach $z <qube>"
 }
 
 cmd_attach() {
@@ -208,6 +168,7 @@ cmd_detach() {
 	qvm-check --quiet "$1" 2>/dev/null || die "no such qube '$1'"
 	target=${2:-$(qubes-prefs default_netvm 2>/dev/null || printf 'sys-firewall')}
 	check_qube_name "$target"
+	qvm-check --quiet "$target" 2>/dev/null || die "no such netvm '$target' to hand $1 to"
 	case "$(current_netvm "$1")" in
 		sys-fw-*) ;;
 		*) die "$1 is not attached to any wgq zone" ;;

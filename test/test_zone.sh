@@ -23,6 +23,7 @@ mkdir -p "$WORK/bin"
 cat > "$WORK/qubes" <<'EOF'
 work|AppVM|sys-firewall|False
 media|AppVM|sys-firewall|False
+mail|AppVM|sys-firewall|False
 sys-net|AppVM|-|True
 sys-firewall|AppVM|sys-net|True
 tpl1|TemplateVM|-|False
@@ -113,18 +114,20 @@ else
 	ok "unusable zone name refused"
 fi
 
-# 2. add --no-attach creates plumbing and touches no client.
-if zone add tz --no-attach >"$WORK/out" 2>&1 \
+# 2. add with no attach flags creates plumbing, asks nothing (no qube
+# shares the zone's name), and touches no client.
+if zone add tz </dev/null >"$WORK/out" 2>&1 \
 	&& grep -q 'wgq.wg-zone' "$QCTL_LOG" \
 	&& grep -q '"zone": "tz"' "$QCTL_LOG" \
-	&& [ "$(netvm_of work)" = "sys-firewall" ]; then
-	ok "add --no-attach creates the zone and attaches nothing"
+	&& [ "$(netvm_of work)" = "sys-firewall" ] \
+	&& [ "$(netvm_of media)" = "sys-firewall" ]; then
+	ok "plain add creates the zone and attaches nothing"
 else
-	cat "$WORK/out"; fail "add --no-attach went wrong"
+	cat "$WORK/out"; fail "plain add went wrong"
 fi
 
-# 3. Interactive add asks the name-match question and honours the answer.
-if printf 'y\n\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" add work >"$WORK/out" 2>&1 \
+# 3. add asks the name-match question and honours the answer.
+if printf 'y\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" add work >"$WORK/out" 2>&1 \
 	&& grep -q 'a qube named work exists' "$WORK/out" \
 	&& [ "$(netvm_of work)" = "sys-fw-work" ]; then
 	ok "name-match prompt attaches the matching qube on yes"
@@ -147,10 +150,11 @@ else
 	cat "$WORK/out"; fail "consented move went wrong"
 fi
 
-# 5. add --attach wires the named qube without a dialogue.
-if zone add z2 --attach media >"$WORK/out" 2>&1 \
-	&& [ "$(netvm_of media)" = "sys-fw-z2" ]; then
-	ok "add --attach wires the named qube"
+# 5. add --attach wires the named qubes, comma list included.
+if zone add z2 --attach media,mail >"$WORK/out" 2>&1 \
+	&& [ "$(netvm_of media)" = "sys-fw-z2" ] \
+	&& [ "$(netvm_of mail)" = "sys-fw-z2" ]; then
+	ok "add --attach wires the named qubes"
 else
 	cat "$WORK/out"; fail "add --attach went wrong"
 fi
@@ -171,6 +175,13 @@ elif grep -q 'still attached' "$WORK/out"; then
 	ok "remove refuses while a client is attached"
 else
 	cat "$WORK/out"; fail "remove refusal failed for the wrong reason"
+fi
+if zone detach work nosuch >"$WORK/out" 2>&1; then
+	fail "detach accepted a nonexistent replacement netvm"
+elif grep -q "no such netvm" "$WORK/out" && [ "$(netvm_of work)" = "sys-fw-tz" ]; then
+	ok "detach refuses a replacement netvm that does not exist"
+else
+	cat "$WORK/out"; fail "bad-netvm refusal failed for the wrong reason"
 fi
 zone detach work >"$WORK/out" 2>&1 || { cat "$WORK/out"; fail "detach failed"; }
 if [ "$(netvm_of work)" = "sys-firewall" ]; then
@@ -194,7 +205,7 @@ else
 fi
 
 # 9. Bare `add` prompts; Enter takes the single-VPN default: bare sys-wgq.
-if printf '\n\n\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" add >"$WORK/out" 2>&1 \
+if printf '\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" add >"$WORK/out" 2>&1 \
 	&& grep -q 'single-VPN default' "$WORK/out" \
 	&& grep -q '^sys-wgq|' "$FAKEQ" \
 	&& grep -q '^sys-fw-wgq|' "$FAKEQ"; then
@@ -203,12 +214,17 @@ else
 	cat "$WORK/out"; fail "singleton default went wrong"
 fi
 
-# 10. The bare sys-wgq is plumbing: attach-all must never grab it.
-if zone add z9 --attach-all >"$WORK/out" 2>&1 \
-	&& [ "$(netvm_of sys-wgq)" = "sys-firewall" ]; then
-	ok "attach-all leaves the singleton VPN qube untouched"
+# 10. The magic attach flags are gone for good: a sweep that once rewired
+# Whonix plumbing must never come back, even as a refused option.
+if zone add z9 --attach-all >"$WORK/out" 2>&1; then
+	fail "--attach-all was accepted"
+elif zone add z9 --no-attach >"$WORK/out" 2>&1; then
+	fail "--no-attach was accepted"
+elif ! grep -q '"zone": "z9"' "$QCTL_LOG" \
+	&& [ "$(netvm_of media)" = "sys-fw-z2" ]; then
+	ok "the deleted attach flags are refused before anything runs"
 else
-	cat "$WORK/out"; fail "attach-all touched plumbing"
+	cat "$WORK/out"; fail "a deleted attach flag still did something"
 fi
 
 # 11. Removing the singleton zone removes the bare-named qube.
