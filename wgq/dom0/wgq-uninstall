@@ -15,8 +15,10 @@ set -eu
 PROG=${0##*/}
 TPL=${WGQ_TEMPLATE:-debian-13-wgq}
 
-die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
-note() { printf '%s: %s\n' "$PROG" "$*"; }
+# note/ok/warn/die come from msg.sh, which sits beside this script.
+case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
+# shellcheck source=dom0/msg.sh
+. "$wgq_here/msg.sh"
 
 step() {
 	printf '\n--> %s\nRun this step? [y = run / s = skip / q = stop] ' "$1"
@@ -48,7 +50,8 @@ for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || tru
 		qvm-shutdown --wait "sys-fw-$zone" "$vpn" 2>/dev/null || true
 		qvm-remove -f "sys-fw-$zone"
 		qvm-remove -f "$vpn"
-		note "zone $zone removed; revoke its registered key at the provider if it was provisioned"
+		ok "zone $zone removed"
+		note "revoke its registered key at the provider if it was provisioned"
 	fi
 done
 
@@ -63,7 +66,7 @@ if qvm-check --quiet "$TPL" 2>/dev/null; then
 	users=$(qvm-ls --raw-data --fields name,template 2>/dev/null \
 		| awk -F'|' -v t="$TPL" '$2 == t {print $1}' | tr '\n' ' ')
 	if [ -n "${users% }" ]; then
-		note "template $TPL still backs: ${users% } -- leaving it in place"
+		warn "template $TPL still backs: ${users% } -- leaving it in place"
 	elif step "remove template $TPL"; then
 		qvm-remove -f "$TPL"
 	fi
@@ -75,5 +78,6 @@ if [ -f /etc/qubes/policy.d/30-wgq.policy ]; then
 	fi
 fi
 
-printf '\n%s: done. The reviewed tree remains; remove it yourself with:\n' "$PROG"
+printf '\n'
+ok "done. The reviewed tree remains; remove it yourself with:"
 printf '    sudo rm -r /srv/salt/wgq /srv/salt/.ingest-receipts/wgq\n'

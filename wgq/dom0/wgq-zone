@@ -36,8 +36,10 @@ usage() {
 	exit 2
 }
 
-die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
-note() { printf '%s: %s\n' "$PROG" "$*"; }
+# note/ok/warn/die come from msg.sh, which sits beside this script.
+case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
+# shellcheck source=dom0/msg.sh
+. "$wgq_here/msg.sh"
 
 check_zone() {
 	# Mirrors the wgq CLI's zone rule; 21 chars keeps sys-wgq-/sys-fw-
@@ -98,7 +100,7 @@ attach_qube() {
 			|| die "sys-fw-$a_zone did not start; $a_qube was not moved"
 	fi
 	qvm-prefs "$a_qube" netvm "sys-fw-$a_zone"
-	note "$a_qube now reaches the network only through zone $a_zone"
+	ok "$a_qube now reaches the network only through zone $a_zone"
 }
 
 # The one question `add` asks on its own: a qube sharing the zone's name
@@ -155,7 +157,7 @@ cmd_add() {
 	fi
 	note "creating $(vpn_name "$z") + sys-fw-$z via salt (can take a minute; report follows)..."
 	qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
-	note "zone $z is up ($(vpn_name "$z") + sys-fw-$z)"
+	ok "zone $z is up ($(vpn_name "$z") + sys-fw-$z)"
 
 	# Creation ends with the plumbing RUNNING: Qubes only assigns clients
 	# to a netvm that is up, so a zone left halted would refuse its first
@@ -191,7 +193,7 @@ cmd_detach() {
 		*) die "$1 is not attached to any wgq zone" ;;
 	esac
 	qvm-prefs "$1" netvm "$target"
-	note "$1 detached; its network now comes from $target"
+	ok "$1 detached; its network now comes from $target"
 }
 
 cmd_list() {
@@ -225,7 +227,8 @@ cmd_remove() {
 	qvm-shutdown --wait "sys-fw-$1" "$rvpn" 2>/dev/null || true
 	qvm-remove -f "sys-fw-$1"
 	qvm-remove -f "$rvpn"
-	note "zone $1 removed. Its registered key still holds a provider device slot;"
+	ok "zone $1 removed"
+	note "its registered key still holds a provider device slot;"
 	note "revoke it (wgq revoke / provider website) if it was ever provisioned."
 }
 
