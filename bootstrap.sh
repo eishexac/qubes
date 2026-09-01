@@ -85,9 +85,9 @@ repo:      $REPO
 
 In dom0 -- FIRST TIME ONLY -- install the airlock, and read it first:
 
-    qvm-run --pass-io $NAME 'cat $REPO/dom0/ingest' > ingest
-    less ingest
-    sudo install -m 0755 ingest /usr/local/bin/qubes-ingest
+    qvm-run --pass-io $NAME 'cat $REPO/dom0/ingest' > /tmp/qubes-ingest
+    less /tmp/qubes-ingest
+    sudo install -m 0755 /tmp/qubes-ingest /usr/local/bin/qubes-ingest
 
 Then, still in dom0:
 
