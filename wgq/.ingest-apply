@@ -9,6 +9,11 @@ template debian-13-minimal
 salt wgq.wg-template
 # The same state applied INSIDE the template: packages and files.
 salt-target debian-13-wgq wgq.wg-template
+# Identity: creates the wgq custom labels (red edge / green filter /
+# yellow mgmt, named so the icons scope to wgq alone) and installs the
+# icon files into dom0's /usr/local. wg-mgmt and every zone include this
+# state too, so skipping only defers it.
+salt wgq.wg-icons
 # Create wgq-mgmt, the provisioning qube. Zones are NOT created here:
 # they are user lifecycle, one deliberate command each --
 #     sudo /srv/salt/wgq/dom0/wgq-zone add <zone>
