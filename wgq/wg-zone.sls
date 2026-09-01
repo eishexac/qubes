@@ -21,7 +21,12 @@
 {% set zone     = salt['pillar.get']('wgq:zone', '') %}
 {% set tpl      = salt['pillar.get']('wgq:template', 'debian-13-wgq') %}
 {% set upstream = salt['pillar.get']('wgq:upstream', 'sys-firewall') %}
-{% set label    = salt['pillar.get']('wgq:label', 'orange') %}
+{#- The wgq custom labels (created in wg-icons.sls): named labels are
+    what scope the icons to wgq alone, and their colours follow the
+    system's own grammar -- red edge like sys-net, green filter like
+    sys-firewall. -#}
+{% set label    = salt['pillar.get']('wgq:label', 'wgq') %}
+{% set label_fw = salt['pillar.get']('wgq:label_fw', 'wgq-fw') %}
 {#- The reserved zone 'wgq' (single-VPN default) collapses the VPN qube
     name to bare sys-wgq; the firewall name follows the normal grammar. -#}
 {% set vpnq = 'sys-wgq' if zone == 'wgq' else 'sys-wgq-' ~ zone %}
@@ -36,11 +41,16 @@ wgq-zone-name-missing:
 
 {% else %}
 
+include:
+  - wgq.wg-icons
+
 wgq-vpn-{{ zone }}-present:
   qvm.present:
     - name: {{ vpnq }}
     - template: {{ tpl }}
     - label: {{ label }}
+    - require:
+      - cmd: wgq-label-wgq
 
 wgq-vpn-{{ zone }}-prefs:
   qvm.prefs:
@@ -95,11 +105,29 @@ wgq-vpn-{{ zone }}-tag:
     - require:
       - qvm: wgq-vpn-{{ zone }}-present
 
+# An existing zone converges too: labels are identity, not creation-day
+# trivia, so a re-run moves old qubes onto the wgq labels.
+wgq-vpn-{{ zone }}-label:
+  cmd.run:
+    - name: qvm-prefs {{ vpnq }} label {{ label }}
+    - unless: qvm-prefs {{ vpnq }} label | grep -qx {{ label }}
+    - require:
+      - qvm: wgq-vpn-{{ zone }}-present
+
 sys-fw-{{ zone }}-present:
   qvm.present:
     - name: sys-fw-{{ zone }}
     - template: {{ tpl }}
-    - label: {{ label }}
+    - label: {{ label_fw }}
+    - require:
+      - cmd: wgq-label-wgq-fw
+
+sys-fw-{{ zone }}-label:
+  cmd.run:
+    - name: qvm-prefs sys-fw-{{ zone }} label {{ label_fw }}
+    - unless: qvm-prefs sys-fw-{{ zone }} label | grep -qx {{ label_fw }}
+    - require:
+      - qvm: sys-fw-{{ zone }}-present
 
 sys-fw-{{ zone }}-prefs:
   qvm.prefs:

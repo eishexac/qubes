@@ -333,9 +333,21 @@ clock that needs the tunnel that needs the clock can wedge a cold boot.
 Everything routed through a zone inherits fail-closed — tunnel down means
 those services stop until `wgq switch` succeeds.
 
+**Identity.** wgq qubes wear their own Qubes labels — `wgq` (red, like
+sys-net: the edge), `wgq-fw` (green, like sys-firewall: the filter) and
+`wgq-mgmt` (yellow) — created as named custom labels via the Admin API,
+so no stock colour is claimed. Qubes resolves icons as
+`<class>-<label-name>`, which is what scopes the icons to wgq alone: the
+VPN qube's cube carries a recessed RJ45 socket, the firewall's a shield,
+wgq-mgmt's a terminal prompt, and no stock icon file is shadowed. The
+labels and icon files install with `wgq.wg-icons` (part of the apply
+plan; zones and mgmt include it too), the icons living in dom0's
+`/usr/local/share/icons` where system updates never touch them. The GUI
+picks them up at the latest on the next login.
+
 Full teardown is `wgq-uninstall` (same dom0 directory): zones first
-(refusing while clients are attached), then wgq-mgmt, template, policy —
-each step confirmed.
+(refusing while clients are attached), then wgq-mgmt, template, the wgq
+labels and icons, policy — each step confirmed.
 
 ---
 

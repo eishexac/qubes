@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    wgq zone firewall icon (label 'wgq-fw'): the Qubes service cube with
+    a shield on its pale face. Green, following the sys-firewall
+    convention -- this is the filter clients sit behind.
+
+    Qubes resolves icons as <class>-<label-name>; a service qube wearing
+    the custom label 'wgq-fw' resolves exactly this name, so no stock
+    icon is shadowed and no stock qube can wear it. Installed by
+    wg-icons.sls into dom0's /usr/local/share/icons/hicolor/scalable/apps/.
+
+    Cube geometry derived from qubes-artwork's servicevm icons,
+    (c) Invisible Things Lab, CC BY-SA 4.0. This file: CC BY-SA 4.0.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="33" height="32" viewBox="0 0 33 32">
+  <path d="M30.0419 22.4525V9.54766C30.0419 8.5907 29.5291 7.70712 28.6982 7.23234L17.3648 0.756134C16.545 0.287671 15.5385 0.287673 14.7187 0.75614L3.38538 7.23233C2.55451 7.70711 2.04175 8.5907 2.04175 9.54765V22.4525C2.04175 23.4094 2.55452 24.293 3.38539 24.7678L14.7189 31.244C15.5387 31.7124 16.5451 31.7124 17.3649 31.2439L28.6982 24.7678C29.5291 24.293 30.0419 23.4094 30.0419 22.4525Z" fill="#22C55E"/>
+  <path d="M2.04175 22.4525C2.04175 23.4094 2.55451 24.293 3.38539 24.7678L14.7451 31.259C15.3229 31.5892 16.0417 31.172 16.0417 30.5065V17.5476C16.0417 16.5906 15.529 15.7071 14.6981 15.2323L3.3384 8.74106C2.76063 8.41091 2.04175 8.82809 2.04175 9.49354V22.4525Z" fill="#BBF7D0"/>
+  <path d="M 24 3 L 42 9.5 L 42 23 C 42 34 34.5 42 24 45.5 C 13.5 42 6 34 6 23 L 6 9.5 Z" transform="translate(5.16 13.9) skewY(30) scale(0.16)" fill="#166534"/>
+</svg>
