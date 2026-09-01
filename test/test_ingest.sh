@@ -239,6 +239,57 @@ else
 	cat "$WORK/out"; fail "drift refusal failed for the wrong reason"
 fi
 
+# ---- the template verb -----------------------------------------------------
+cat > "$WORK/qvm-check" <<'EOF'
+#!/bin/sh
+exit "${QCHECK_RC:-0}"
+EOF
+cat > "$WORK/qvm-template" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "${QTLOG:?}"
+exit 0
+EOF
+chmod +x "$WORK/qvm-check" "$WORK/qvm-template"
+
+run_apply_t() {
+	# $1 = answers, $2 = qvm-check exit code (0 = template present)
+	printf '%b' "$1" | env QUBES_INGEST_QUBESCTL="$WORK/qubesctl" \
+		QUBES_INGEST_POLICY_DIR="$WORK/policy.d" \
+		QUBES_INGEST_QVM_TEMPLATE="$WORK/qvm-template" \
+		QUBES_INGEST_QVM_CHECK="$WORK/qvm-check" \
+		QLOG="$WORK/qlog" QTLOG="$WORK/qtlog" QCHECK_RC="$2" QRC=0 \
+		"$INGEST" apply demo >"$WORK/out" 2>&1
+}
+reset_apply_t() { reset_apply; : > "$WORK/qtlog"; }
+
+# A fresh, drift-free tree with a template step in the plan.
+cat > "$REPO/demo/.ingest-apply" <<'EOF'
+template demo-tpl
+salt demo.state
+EOF
+run_pull yes || { cat "$WORK/out"; fail "pull of the template-bearing plan failed"; }
+
+# 17. Present template: skipped automatically, no prompt spent, no install.
+reset_apply_t
+if run_apply_t 'y\n' 0 \
+	&& grep -q 'already installed' "$WORK/out" \
+	&& [ ! -s "$WORK/qtlog" ] \
+	&& grep -q 'state.apply demo.state' "$WORK/qlog"; then
+	ok "present template auto-skips; the rest of the plan still runs"
+else
+	cat "$WORK/out"; fail "template auto-skip went wrong"
+fi
+
+# 18. Absent template: shown, confirmed, installed.
+reset_apply_t
+if run_apply_t 'y\ny\n' 1 \
+	&& grep -q 'install demo-tpl' "$WORK/qtlog" \
+	&& grep -q 'state.apply demo.state' "$WORK/qlog"; then
+	ok "absent template installs after a yes"
+else
+	cat "$WORK/out" "$WORK/qtlog" 2>/dev/null; fail "template install step went wrong"
+fi
+
 if [ "$failures" -gt 0 ]; then
 	printf '%s failure(s)\n' "$failures"
 	exit 1

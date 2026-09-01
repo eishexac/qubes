@@ -25,8 +25,9 @@
 #
 # `apply` then runs the project's declared install plan (.ingest-apply in
 # the REVIEWED tree under /srv/salt): a fixed verb set -- salt,
-# salt-target, policy -- interpreted by this script, never shell executed
-# from the payload. Every step is printed and confirmed before it runs
+# salt-target, policy, template -- interpreted by this script, never shell
+# executed from the payload. (`template <name>` installs an official
+# template via qvm-template, and skips itself when it is already present.) Every step is printed and confirmed before it runs
 # (y = run, s = skip, q = stop), and a tree that no longer matches its
 # approval receipt is refused. It replaces transcribing qubesctl commands
 # out of a README; it does not replace your judgment about running them.
@@ -70,6 +71,8 @@ PROG=${0##*/}
 # Overridable only so the apply flow can be tested outside dom0.
 QUBESCTL="${QUBES_INGEST_QUBESCTL:-qubesctl}"
 POLICY_DIR="${QUBES_INGEST_POLICY_DIR:-/etc/qubes/policy.d}"
+QVM_TEMPLATE="${QUBES_INGEST_QVM_TEMPLATE:-qvm-template}"
+QVM_CHECK="${QUBES_INGEST_QVM_CHECK:-qvm-check}"
 
 if command -v sha256sum >/dev/null 2>&1; then
 	SHA=sha256sum
@@ -274,8 +277,11 @@ validate_step() {
 			case "$1" in
 				''|*[!A-Za-z0-9._-]*|-*) die "$v_plan:$v_line: unsafe policy file name '$1'" ;;
 			esac ;;
+		template)
+			[ $# -eq 1 ] || die "$v_plan:$v_line: 'template' takes exactly one template name"
+			check_token "$v_plan:$v_line" "$1" ;;
 		*)
-			die "$v_plan:$v_line: unknown verb '$v_verb' (known: salt, salt-target, policy)" ;;
+			die "$v_plan:$v_line: unknown verb '$v_verb' (known: salt, salt-target, policy, template)" ;;
 	esac
 }
 
@@ -295,6 +301,13 @@ run_step() {
 			r_src="$SALT_ROOT/$r_project/dom0/$1"
 			[ -f "$r_src" ] || die "plan names a policy file that is not in the tree: $r_src"
 			r_cmd="cp $r_src $POLICY_DIR/$1" ;;
+		template)
+			# A no-op needs no confirmation; a download does.
+			if $QVM_CHECK --quiet "$1" >/dev/null 2>&1; then
+				note "template $1 is already installed; skipping"
+				return 0
+			fi
+			r_cmd="$QVM_TEMPLATE install $1" ;;
 	esac
 	printf '\n--> %s\n' "$r_cmd"
 	printf 'Run this step? [y = run / s = skip / q = stop] '
