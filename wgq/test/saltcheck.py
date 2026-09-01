@@ -28,6 +28,7 @@ targets = {
     "wg-mgmt.sls": ["dom0"],
     "wg-zone.sls": ["dom0"],
     "wg-icons.sls": ["dom0"],
+    "wg-cli.sls": ["dom0"],
     "top.sls": ["dom0"],
 }
 

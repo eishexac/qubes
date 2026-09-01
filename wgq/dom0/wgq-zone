@@ -25,7 +25,9 @@
 
 set -eu
 
-PROG=${0##*/}
+# The dom0 dispatcher execs this as `wgq zone`; naming ourselves what
+# the operator actually typed keeps every printed hint copy-pasteable.
+PROG=${WGQ_PROG:-${0##*/}}
 
 usage() {
 	printf 'usage: %s add <zone> [--upstream <netvm>] [--attach <qube>[,<qube>...]]...\n' "$PROG" >&2

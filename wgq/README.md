@@ -194,7 +194,7 @@ sudo qubesctl --show-output state.apply wgq.wg-mgmt
 need one (zones are lifecycle, not installation):
 
 ```sh
-sudo /srv/salt/wgq/dom0/wgq-zone add work
+sudo wgq zone add work
 ```
 
 That builds `sys-wgq-work` + `sys-fw-work`, tags and marks them — and the
@@ -203,7 +203,7 @@ until the first `wgq switch` succeeds. Later, point clients at the zone
 with:
 
 ```sh
-sudo /srv/salt/wgq/dom0/wgq-zone attach work <qube>
+sudo wgq zone attach work <qube>
 ```
 
 **5. Optionally install the policy** that lets `wgq firewall` apply the
@@ -288,12 +288,35 @@ Provider-sourced endpoints are always required to be publicly routable.
 
 ## Zones
 
-`wgq-zone`, in dom0 from the installed tree, is the whole lifecycle:
+`wgq zone`, in dom0, is the whole lifecycle. The `wgq` entrypoint is a
+symlink into the reviewed tree (installed by `wgq.wg-cli`), so the file
+that runs is always the one the airlock approved:
 
 ```
-wgq-zone add <zone> [--upstream <netvm>] [--attach <qube>[,<qube>...]]...
-wgq-zone attach <zone> <qube>        wgq-zone detach <qube> [netvm]
-wgq-zone list                        wgq-zone remove <zone>
+sudo wgq zone add <zone> [--upstream <netvm>] [--attach <qube>[,<qube>...]]...
+sudo wgq zone attach <zone> <qube>    sudo wgq zone detach <qube> [netvm]
+wgq zone list                         sudo wgq zone remove <zone>
+```
+
+The same entrypoint reaches the other qubes without opening their
+terminals -- it frames a `qvm-run` you could type yourself, and prints
+it before running: `wgq provision ...` (and every other management
+verb) lands in wgq-mgmt; `wgq [-z <zone>] keygen|pubkey|apply|switch|
+status` lands in the zone's VPN qube, defaulting to the single-VPN
+zone `wgq`. Two dom0-only verbs close the flow's remaining gaps:
+`wgq credential <provider>` stores the account id into wgq-mgmt (typed
+hidden in dom0, piped straight into the qube, never on any other
+disk), and `wgq sync` streams the peer bundle from wgq-mgmt into the
+zone's VPN qube and applies it -- no qvm-copy dance. The whole
+lifecycle, from dom0:
+
+```sh
+wgq credential ivpn
+wgq keygen
+wgq pubkey | wgq provision --provider ivpn --zone wgq
+wgq sync
+wgq switch <peer>
+wgq firewall --zone wgq
 ```
 
 The only qubes whose netvm ever changes are the ones you typed — there is
@@ -309,7 +332,7 @@ are legitimate:
 - **one zone per identity**: the reason zones exist
 - **a dedicated infra zone** for system traffic, separate from identities
 
-The single-VPN setup has first-class naming: bare `wgq-zone add` asks for
+The single-VPN setup has first-class naming: bare `wgq zone add` asks for
 a zone name, and plain Enter takes the reserved zone `wgq`, whose qubes
 are the unsuffixed `sys-wgq` plus `sys-fw-wgq`. Internally it is still a
 named zone — `--zone wgq` everywhere — so the tag, the policy and the
@@ -345,7 +368,7 @@ plan; zones and mgmt include it too), the icons living in dom0's
 `/usr/local/share/icons` where system updates never touch them. The GUI
 picks them up at the latest on the next login.
 
-Full teardown is `wgq-uninstall` (same dom0 directory): zones first
+Full teardown is `sudo wgq uninstall`: zones first
 (refusing while clients are attached), then wgq-mgmt, template, the wgq
 labels and icons, policy — each step confirmed.
 

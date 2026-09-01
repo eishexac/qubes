@@ -1,0 +1,150 @@
+#!/bin/sh
+#
+# wgq (dom0) - one entrypoint for the whole tool, routed to where the
+# work actually belongs.
+#
+#     wgq zone <verb> ...            the zone manager, in dom0 (sudo)
+#     wgq uninstall                  the uninstaller, in dom0 (sudo)
+#     wgq credential <provider>      store the account id in wgq-mgmt
+#     wgq [-z <zone>] sync           peer bundle: wgq-mgmt -> VPN qube,
+#                                    then `wgq apply` there
+#     wgq [-z <zone>] <vpn verb> ..  runs `wgq <verb>` in the zone's VPN
+#                                    qube (keygen apply switch: as root;
+#                                    pubkey status: as user)
+#     wgq <anything else> ...        runs `wgq ...` inside wgq-mgmt
+#
+# The default zone is the reserved singleton 'wgq', so on a single-VPN
+# setup the whole lifecycle is dom0 one-liners:
+#
+#     wgq credential ivpn
+#     wgq keygen
+#     wgq pubkey | wgq provision --provider ivpn --zone wgq
+#     wgq sync
+#     wgq switch <peer>
+#     wgq firewall --zone wgq
+#
+# File arguments to proxied verbs cross into the target qube verbatim:
+# give `apply` a path that exists THERE, not a dom0 path (or just use
+# `sync`, which stages the bundle itself).
+#
+# dom0 never runs the wgq CLI itself -- the CLI refuses dom0, by design.
+# This wrapper only frames qvm-run invocations you could type by hand,
+# and prints each one before it runs, so nothing is hidden.
+
+set -eu
+
+PROG=${0##*/}
+# Installed on PATH as a symlink into the reviewed tree; resolve it so
+# the siblings (msg.sh, wgq-zone, wgq-uninstall) are found either way.
+SELF=$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")
+case "$SELF" in */*) wgq_here=${SELF%/*} ;; *) wgq_here=. ;; esac
+# shellcheck source=dom0/msg.sh
+. "$wgq_here/msg.sh"
+
+MGMT=${WGQ_MGMT:-wgq-mgmt}
+
+usage() {
+	printf 'usage: %s zone <verb> ...           (dom0: add attach detach list remove)\n' "$PROG" >&2
+	printf '       %s uninstall\n' "$PROG" >&2
+	printf '       %s credential <provider>     (store the account id in %s)\n' "$PROG" "$MGMT" >&2
+	printf '       %s [-z <zone>] sync          (peer bundle: %s -> VPN qube + apply)\n' "$PROG" "$MGMT" >&2
+	printf '       %s [-z <zone>] keygen|pubkey|apply|switch|status ...\n' "$PROG" >&2
+	printf '       %s <mgmt verb> ...           (servers provision peer firewall ...)\n' "$PROG" >&2
+	exit 2
+}
+
+check_zone() {
+	case "$1" in
+		''|*[!a-z0-9-]*|-*) die "unusable zone name '$1' (lowercase, digits, dashes)" ;;
+	esac
+}
+
+vpn_name() {
+	if [ "$1" = wgq ]; then printf 'sys-wgq'; else printf 'sys-wgq-%s' "$1"; fi
+}
+
+# Single-quote an argument for the shell inside the target qube; the
+# only character that can escape a single-quoted string is the quote
+# itself, so that is the only one rewritten.
+quote() {
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+# run_in <qube> <user> <wgq args...> -- frame the qvm-run, show it, run it.
+run_in() {
+	r_qube=$1 r_user=$2
+	shift 2
+	r_cmd='wgq'
+	for r_arg in "$@"; do
+		r_cmd="$r_cmd $(quote "$r_arg")"
+	done
+	note "-> qvm-run -u $r_user $r_qube $r_cmd"
+	exec qvm-run --no-gui --pass-io -u "$r_user" -- "$r_qube" "$r_cmd"
+}
+
+zone=wgq
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-z|--zone)
+			[ $# -ge 2 ] || usage
+			zone=$2
+			shift 2 ;;
+		-*) usage ;;
+		*) break ;;
+	esac
+done
+[ $# -ge 1 ] || usage
+verb=$1
+
+case "$verb" in
+	zone)
+		shift
+		# The sub-tool's own hints then name the command the operator
+		# actually has on PATH.
+		WGQ_PROG="$PROG zone" export WGQ_PROG
+		exec "$wgq_here/wgq-zone" "$@" ;;
+	uninstall)
+		exec "$wgq_here/wgq-uninstall" ;;
+	credential)
+		# The secret is typed in dom0 and piped straight into the file
+		# inside wgq-mgmt: it never touches a disk outside that qube.
+		[ $# -eq 2 ] || usage
+		provider=$2
+		case "$provider" in
+			''|*[!a-z0-9-]*) die "unusable provider name '$provider'" ;;
+		esac
+		printf '%s account id (input hidden): ' "$provider"
+		stty -echo 2>/dev/null || true
+		acct=""
+		read -r acct || true
+		stty echo 2>/dev/null || true
+		printf '\n'
+		[ -n "$acct" ] || die "empty account id; nothing written"
+		note "-> qvm-run -u user $MGMT 'umask 077 && cat > /rw/config/$provider-account'"
+		printf '%s\n' "$acct" | qvm-run --no-gui --pass-io -u user -- "$MGMT" \
+			"umask 077 && cat > /rw/config/$provider-account"
+		ok "credential stored in $MGMT:/rw/config/$provider-account (mode 600)"
+		exit 0 ;;
+	sync)
+		# The qvm-copy dance, framed: stream the bundle out of wgq-mgmt
+		# and into the zone's VPN qube, then apply it there. The zone
+		# name is validated above, so embedding it is safe.
+		[ $# -eq 1 ] || usage
+		check_zone "$zone"
+		s_vpn=$(vpn_name "$zone")
+		note "-> qvm-run -u user $MGMT 'tar -C ~/.local/share/wgq/zones/$zone -cf - peers'"
+		note "   | qvm-run -u root $s_vpn 'tar -xf - && wgq apply peers'"
+		qvm-run --no-gui --pass-io -u user -- "$MGMT" \
+			"tar -C /home/user/.local/share/wgq/zones/$zone -cf - peers" \
+		| qvm-run --no-gui --pass-io -u root -- "$s_vpn" \
+			"rm -rf /tmp/wgq-sync && mkdir -p /tmp/wgq-sync && tar -xf - -C /tmp/wgq-sync && wgq apply /tmp/wgq-sync/peers && rm -rf /tmp/wgq-sync"
+		exit 0 ;;
+	keygen|apply|switch)
+		check_zone "$zone"
+		shift; run_in "$(vpn_name "$zone")" root "$verb" "$@" ;;
+	pubkey|status)
+		check_zone "$zone"
+		shift; run_in "$(vpn_name "$zone")" user "$verb" "$@" ;;
+	*)
+		run_in "$MGMT" user "$@" ;;
+esac

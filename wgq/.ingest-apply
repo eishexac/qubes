@@ -14,9 +14,13 @@ salt-target debian-13-wgq wgq.wg-template
 # icon files into dom0's /usr/local. wg-mgmt and every zone include this
 # state too, so skipping only defers it.
 salt wgq.wg-icons
+# The dom0 entrypoint: symlinks /usr/local/bin/wgq into the reviewed
+# tree, so `sudo wgq zone add <zone>` works instead of the /srv/salt
+# path, and `wgq provision ...` frames the qvm-run into wgq-mgmt.
+salt wgq.wg-cli
 # Create wgq-mgmt, the provisioning qube. Zones are NOT created here:
 # they are user lifecycle, one deliberate command each --
-#     sudo /srv/salt/wgq/dom0/wgq-zone add <zone>
+#     sudo wgq zone add <zone>
 salt wgq.wg-mgmt
 # OPTIONAL -- answer 's' to skip: the qrexec grant that lets 'wgq firewall'
 # apply the endpoint allowlist through a dom0 'ask' prompt. Without it, the

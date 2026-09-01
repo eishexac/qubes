@@ -72,6 +72,12 @@ if qvm-check --quiet "$TPL" 2>/dev/null; then
 	fi
 fi
 
+if [ -L /usr/local/bin/wgq ]; then
+	if step "remove the dom0 entrypoint /usr/local/bin/wgq"; then
+		rm -f /usr/local/bin/wgq
+	fi
+fi
+
 ICON_DIR=/usr/local/share/icons/hicolor/scalable/apps
 if [ -e "$ICON_DIR/servicevm-wgq.svg" ] \
 	|| qubesd-query --fail -e dom0 admin.label.Get dom0 wgq >/dev/null 2>&1; then
