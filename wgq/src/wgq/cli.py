@@ -40,6 +40,15 @@ ZONE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,20}$")
 DEFAULT_COUNT = 2
 
 
+def say(message: str) -> None:
+    """Progress note on stderr, printed BEFORE a blocking call.
+
+    Every network round-trip announces itself first, so a quiet terminal
+    means waiting, never wondering whether the tool hung.
+    """
+    print(message, file=sys.stderr, flush=True)
+
+
 # -- environment guards -----------------------------------------------------
 
 
@@ -144,6 +153,7 @@ def parse_renames(pairs: list[str]) -> dict[str, str]:
 
 def cmd_servers(args: argparse.Namespace) -> int:
     provider = get_provider(args.provider)(timeout=args.timeout)
+    say(f"fetching the {args.provider} server list...")
     servers = provider.servers(args.filter)
     for server in servers:
         print(f"{server.name:<20} {server.endpoint:<24} {server.location}")
@@ -162,9 +172,11 @@ def cmd_provision(args: argparse.Namespace) -> int:
     )
     credential = read_credential(account_path)
 
+    say(f"logging in to {provider_cls.name}...")
     provider.authenticate(credential)
     del credential
 
+    say(f"fetching the {provider_cls.name} server list...")
     chosen = select_servers(provider, args)
     renames = parse_renames(args.name)
     unknown = sorted(set(renames) - {server.name for server in chosen})
@@ -174,6 +186,7 @@ def cmd_provision(args: argparse.Namespace) -> int:
             "A silently ignored rename would leave a peer under a name you did not expect."
         )
 
+    say("registering the public key with the provider (this uses a device slot)...")
     address = provider.register(pubkey, force_login=args.force_login)
 
     # Build and validate every peer before writing any of them.
@@ -573,7 +586,9 @@ def _authenticated(args: argparse.Namespace):
     provider_cls = get_provider(args.provider)
     provider = provider_cls(timeout=args.timeout)
     path = Path(args.account_file or f"/rw/config/{provider_cls.name}-account")
-    provider.authenticate(read_credential(path))
+    credential = read_credential(path)
+    say(f"logging in to {provider_cls.name}...")
+    provider.authenticate(credential)
     return provider
 
 

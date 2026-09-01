@@ -153,6 +153,7 @@ cmd_add() {
 		qvm-check --quiet "$upstream" 2>/dev/null || die "no such upstream netvm '$upstream'"
 		pillar="{\"wgq\": {\"zone\": \"$z\", \"upstream\": \"$upstream\"}}"
 	fi
+	note "creating $(vpn_name "$z") + sys-fw-$z via salt (can take a minute; report follows)..."
 	qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
 	note "zone $z is up ($(vpn_name "$z") + sys-fw-$z)"
 
@@ -220,6 +221,7 @@ cmd_remove() {
 	r_ans=""
 	read -r r_ans || true
 	[ "$r_ans" = "$1" ] || die "confirmation did not match; nothing removed"
+	note "shutting down and removing the zone qubes..."
 	qvm-shutdown --wait "sys-fw-$1" "$rvpn" 2>/dev/null || true
 	qvm-remove -f "sys-fw-$1"
 	qvm-remove -f "$rvpn"

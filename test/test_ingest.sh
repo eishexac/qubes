@@ -34,10 +34,13 @@ failures=0
 fail() { printf 'FAIL: %s\n' "$*"; failures=$((failures + 1)); }
 ok()   { printf 'ok:   %s\n' "$*"; }
 
-run_pull() { printf '%s\n' "$1" | "$INGEST" pull testqube demo "$REPO" >"$WORK/out" 2>&1; }
+# $1 = the answers typed over stdin: first the open-the-review prompt
+# (empty = default = open; PAGER=cat prints the diff into the capture),
+# then the typed install confirmation.
+run_pull() { printf '%b' "$1" | "$INGEST" pull testqube demo "$REPO" >"$WORK/out" 2>&1; }
 
 # 1. A fresh pull with a typed yes installs the tree and writes a receipt.
-if run_pull yes \
+if run_pull '\nyes\n' \
 	&& [ -f "$QUBES_INGEST_SALT_ROOT/demo/readme.txt" ] \
 	&& [ -f "$QUBES_INGEST_SALT_ROOT/.ingest-receipts/demo" ]; then
 	ok "fresh pull installs after yes"
@@ -53,7 +56,7 @@ else
 fi
 
 # 3. Pulling again with nothing changed is a no-op and says so.
-if run_pull yes && grep -q 'already exactly' "$WORK/out"; then
+if run_pull '' && grep -q 'already exactly' "$WORK/out"; then
 	ok "unchanged pull is a no-op"
 else
 	fail "unchanged pull was not detected"
@@ -61,7 +64,7 @@ fi
 
 # 4. Anything but a literal yes refuses, and the tree stays untouched.
 printf 'second version\n' > "$REPO/demo/readme.txt"
-if run_pull no; then
+if run_pull '\nno\n'; then
 	fail "a 'no' answer still exited 0"
 else
 	if grep -q 'first version' "$QUBES_INGEST_SALT_ROOT/demo/readme.txt"; then
@@ -72,13 +75,25 @@ else
 fi
 
 # 5. An update pull shows exactly the change and installs it.
-if run_pull yes \
+if run_pull '\nyes\n' \
 	&& grep -q '^-first version' "$WORK/out" \
 	&& grep -q '^+second version' "$WORK/out" \
 	&& grep -q 'second version' "$QUBES_INGEST_SALT_ROOT/demo/readme.txt"; then
 	ok "update pull diffs and installs the change"
 else
 	cat "$WORK/out"; fail "update pull went wrong"
+fi
+
+# 5b. Declining the pager is a typed choice, said out loud; the typed
+# install gate still stands afterwards.
+printf 'third version\n' > "$REPO/demo/readme.txt"
+if run_pull 'n\nyes\n' \
+	&& grep -q 'review skipped' "$WORK/out" \
+	&& ! grep -q '^+third version' "$WORK/out" \
+	&& grep -q 'third version' "$QUBES_INGEST_SALT_ROOT/demo/readme.txt"; then
+	ok "skipping the review is typed, warned about, and still gated on yes"
+else
+	cat "$WORK/out"; fail "the review-skip path went wrong"
 fi
 
 # 6. status: clean after approval, loud after tampering.
@@ -100,7 +115,7 @@ fi
 # that failed to run at all would otherwise pass them.
 # 7. A symlink in the payload is refused outright.
 ln -s /etc/passwd "$REPO/demo/evil-link"
-if run_pull yes; then
+if run_pull ''; then
 	fail "a payload with a symlink was accepted"
 elif grep -q 'not plain files' "$WORK/out"; then
 	ok "symlink payload refused"
@@ -111,7 +126,7 @@ rm "$REPO/demo/evil-link"
 
 # 8. An undeclared binary is refused; declaring it makes it reviewable.
 printf 'BIN\000ARY\n' > "$REPO/demo/blob.bin"
-if run_pull yes; then
+if run_pull ''; then
 	fail "an undeclared binary was accepted"
 elif grep -q 'undeclared binary' "$WORK/out"; then
 	ok "undeclared binary refused"
@@ -119,7 +134,7 @@ else
 	cat "$WORK/out"; fail "binary refusal failed for the wrong reason"
 fi
 printf 'blob.bin\n' > "$REPO/demo/.ingest-binaries"
-if run_pull yes && grep -q 'blob.bin' "$WORK/out" && grep -q 'staged:' "$WORK/out"; then
+if run_pull '\nyes\n' && grep -q 'blob.bin' "$WORK/out" && grep -q 'staged:' "$WORK/out"; then
 	ok "declared binary accepted and shown by hash"
 else
 	cat "$WORK/out"; fail "declared binary handling went wrong"
@@ -127,7 +142,7 @@ fi
 
 # 9. A hostile file name is refused.
 printf 'x\n' > "$REPO/demo/bad name.txt"
-if run_pull yes; then
+if run_pull ''; then
 	fail "a payload with a space in a file name was accepted"
 elif grep -q 'file names outside' "$WORK/out"; then
 	ok "unportable file name refused"
@@ -175,15 +190,18 @@ salt demo.state
 salt-target demo-tpl demo.state
 policy demo.policy
 EOF
-run_pull yes || { cat "$WORK/out"; fail "pull of the plan-bearing tree failed"; }
+run_pull '\nyes\n' || { cat "$WORK/out"; fail "pull of the plan-bearing tree failed"; }
 
-# 11. A confirmed plan runs every step through the fixed verbs.
+# 11. A confirmed plan runs every step through the fixed verbs, each one
+# announced with its place in the walk.
 reset_apply
 if run_apply 'y\ny\ny\n' \
 	&& grep -q -- '--show-output state.apply demo.state' "$WORK/qlog" \
 	&& grep -q -- '--skip-dom0 --targets=demo-tpl' "$WORK/qlog" \
+	&& grep -q '^\[1/3\] ' "$WORK/out" \
+	&& grep -q '^\[3/3\] ' "$WORK/out" \
 	&& [ -f "$WORK/policy.d/demo.policy" ]; then
-	ok "apply runs salt, salt-target and policy steps after yes"
+	ok "apply runs salt, salt-target and policy steps after yes, counted"
 else
 	cat "$WORK/out" "$WORK/qlog" 2>/dev/null; fail "confirmed apply went wrong"
 fi
@@ -220,7 +238,7 @@ fi
 # and the refusal teaches the way out: a plan from a newer tree means the
 # installed tool is stale, so the message names the self-update pull.
 printf 'rm -rf /\n' > "$REPO/demo/.ingest-apply"
-run_pull yes || { cat "$WORK/out"; fail "pull of the malformed plan failed"; }
+run_pull '\nyes\n' || { cat "$WORK/out"; fail "pull of the malformed plan failed"; }
 reset_apply
 if run_apply '' ; then
 	fail "a malformed plan was accepted"
@@ -270,7 +288,7 @@ cat > "$REPO/demo/.ingest-apply" <<'EOF'
 template demo-tpl
 salt demo.state
 EOF
-run_pull yes || { cat "$WORK/out"; fail "pull of the template-bearing plan failed"; }
+run_pull '\nyes\n' || { cat "$WORK/out"; fail "pull of the template-bearing plan failed"; }
 
 # 17. Present template: skipped automatically, no prompt spent, no install.
 reset_apply_t

@@ -17,9 +17,10 @@
 #   2. The payload is scanned: regular files and directories only,
 #      portable file names only, and no binaries except the ones the
 #      project declares in <project>/.ingest-binaries.
-#   3. You are shown the full diff against what is currently installed
-#      (first install = everything is new), plus the hash of every
-#      declared binary, old and new.
+#   3. The full diff against what is currently installed is built (first
+#      install = everything is new), plus the hash of every declared
+#      binary, old and new -- and offered in your pager. Skipping the
+#      read is a typed choice, never the default.
 #   4. Only after you type "yes" is the tree swapped into
 #      /srv/salt/<project>, and a receipt of what you approved recorded.
 #
@@ -202,6 +203,7 @@ cmd_pull() {
 	rm -f "$stage/payload.tar"
 	[ -d "$stage/$project" ] || die "the qube sent no '$project' directory"
 
+	note "scanning the payload (plain files only, portable names, declared binaries)"
 	scan "$stage/$project"
 	chmod -R u=rwX,go=rX "$stage/$project"
 	[ "$(id -u)" = 0 ] && chown -R root:root "$stage/$project"
@@ -218,8 +220,18 @@ cmd_pull() {
 		return 0
 	fi
 
+	note "building the review (the full diff of what a yes would install)"
 	review "$basis" "$stage/$project" "$project" "$stage/review"
-	$PAGER "$stage/review"
+	# Reading is the default; skipping it is a typed decision. The install
+	# gate below stands either way, but an unread yes is exactly the case
+	# the threat model says no tool can help with -- so the skip says so.
+	printf 'Open the review in %s? [Y/n] ' "$PAGER"
+	open_review=""
+	read -r open_review || true
+	case "$open_review" in
+		n|no) note "review skipped -- you are approving bytes you have not read" ;;
+		*) $PAGER "$stage/review" ;;
+	esac
 
 	printf '\nInstall %s into %s? Type "yes" to proceed: ' "$project" "$SALT_ROOT"
 	answer=""
@@ -295,8 +307,8 @@ check_token() {
 }
 
 run_step() {
-	r_project=$1 r_verb=$2
-	shift 2
+	r_project=$1 r_count=$2 r_verb=$3
+	shift 3
 	case "$r_verb" in
 		salt)        r_cmd="$QUBESCTL --show-output state.apply $1" ;;
 		salt-target) r_cmd="$QUBESCTL --skip-dom0 --targets=$1 --show-output state.apply $2" ;;
@@ -307,17 +319,23 @@ run_step() {
 		template)
 			# A no-op needs no confirmation; a download does.
 			if $QVM_CHECK --quiet "$1" >/dev/null 2>&1; then
-				note "template $1 is already installed; skipping"
+				note "[$r_count] template $1 is already installed; skipping"
 				return 0
 			fi
 			r_cmd="$QVM_TEMPLATE install $1" ;;
 	esac
-	printf '\n--> %s\n' "$r_cmd"
+	printf '\n[%s] --> %s\n' "$r_count" "$r_cmd"
 	printf 'Run this step? [y = run / s = skip / q = stop] '
 	r_answer=""
 	read -r r_answer || r_answer=q
 	case "$r_answer" in
 		y|yes)
+			# Never sit on a blocking call without saying what it is
+			# doing: salt in particular can look idle for minutes (a
+			# template build clones a qube and installs packages).
+			case "$r_verb" in
+				salt|salt-target) note "running; salt can look idle for minutes before its report" ;;
+			esac
 			# shellcheck disable=SC2086 # every word was validated above
 			$r_cmd || die "step failed: $r_cmd -- later steps not run"
 			;;
@@ -349,28 +367,33 @@ cmd_apply() {
 		fi
 	fi
 
-	# Validate the whole plan before running any of it.
+	# Validate the whole plan before running any of it, counting the real
+	# steps so each one can announce its place in the walk.
 	a_n=0
+	a_total=0
 	# shellcheck disable=SC2094 # the plan's NAME is passed for error
 	# messages only; nothing in the loop writes to the file being read
 	while IFS= read -r a_line <&3 || [ -n "$a_line" ]; do
 		a_n=$((a_n + 1))
 		case "$a_line" in ''|'#'*) continue ;; esac
+		a_total=$((a_total + 1))
 		# shellcheck disable=SC2086 # deliberate word splitting of the plan line
 		validate_step "$a_plan" "$a_n" $a_line
 	done 3< "$a_plan"
 
-	note "apply plan for $a_project -- each step asks before it runs:"
+	note "apply plan for $a_project ($a_total step(s)) -- each step asks before it runs:"
 	grep -v '^[[:space:]]*$' "$a_plan" | sed 's/^/    /' >&2
 
 	# Plan on fd 3; stdin stays free for the per-step confirmations.
+	a_step=0
 	while IFS= read -r a_line <&3 || [ -n "$a_line" ]; do
 		case "$a_line" in
 			'') continue ;;
 			'#'*) printf '\n%s\n' "$a_line" ;;
 			*)
+				a_step=$((a_step + 1))
 				# shellcheck disable=SC2086 # deliberate word splitting
-				run_step "$a_project" $a_line ;;
+				run_step "$a_project" "$a_step/$a_total" $a_line ;;
 		esac
 	done 3< "$a_plan"
 	note "apply finished for $a_project"
