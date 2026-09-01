@@ -59,6 +59,16 @@ class TestDom0Refusal(unittest.TestCase):
         self.assertNotIn("must never run in dom0", err)
 
 
+class TestZoneNames(unittest.TestCase):
+    def test_normal_zones_are_suffixed(self):
+        self.assertEqual(cli.vm_for_zone("work"), "sys-wgq-work")
+
+    def test_reserved_singleton_zone_collapses_the_stutter(self):
+        # zone 'wgq' is the single-VPN-for-everything default; its VPN
+        # qube is the bare sys-wgq, never sys-wgq-wgq.
+        self.assertEqual(cli.vm_for_zone("wgq"), "sys-wgq")
+
+
 class TestDom0Detection(unittest.TestCase):
     def test_detection_needs_both_signals(self):
         # dom0 ships qrexec-client; VMs ship qrexec-client-vm. Presence of
