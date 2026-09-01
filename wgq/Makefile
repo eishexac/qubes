@@ -33,6 +33,7 @@ SHELL_SCRIPTS := \
 	template/etc/qubes/qubes-firewall.d/50-wgq \
 	template/usr/sbin/wg-tunnel \
 	dom0/wgq-zone \
+	dom0/wgq-uninstall \
 	test/verify.sh
 
 .PHONY: all build check verify check-salt clean install version
