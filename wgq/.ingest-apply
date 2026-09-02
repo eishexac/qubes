@@ -4,17 +4,19 @@
 # otherwise qvm-template pulls the OFFICIAL debian-13-minimal, verified
 # against ITL's keys -- the trust anchor everything here already rests on.
 template debian-13-minimal
+# Identity FIRST: the wgq custom labels (red edge / green filter /
+# yellow mgmt / black template, named so the icons scope to wgq alone)
+# and the icon files, into dom0's /usr/share/icons -- on disk before
+# anything exists to wear them. wg-template, wg-mgmt and every zone
+# include this state too, so skipping only defers it. (A session
+# already running keeps its stale icon cache either way: a qube whose
+# label flips mid-session shows blank until the next login.)
+salt wgq.wg-icons
 # Build the template: clones debian-13-minimal and bootstraps the salt
 # connector over qvm-run. Slow the first time.
 salt wgq.wg-template
 # The same state applied INSIDE the template: packages and files.
 salt-target debian-13-wgq wgq.wg-template
-# Identity: creates the wgq custom labels (red edge / green filter /
-# yellow mgmt / black template, named so the icons scope to wgq alone)
-# and installs the icon files into dom0's /usr/share/icons. wg-mgmt,
-# every zone and the template include this state too, so skipping only
-# defers it.
-salt wgq.wg-icons
 # The dom0 entrypoint: symlinks /usr/local/bin/wgq into the reviewed
 # tree, so `sudo wgq zone add <zone>` works instead of the /srv/salt
 # path, and `wgq provision ...` frames the qvm-run into wgq-mgmt.
