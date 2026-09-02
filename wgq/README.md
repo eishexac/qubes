@@ -356,6 +356,18 @@ clock that needs the tunnel that needs the clock can wedge a cold boot.
 Everything routed through a zone inherits fail-closed — tunnel down means
 those services stop until `wgq switch` succeeds.
 
+**The emergency stop.** `sudo wgq panic` takes every zone dark at once
+(`sudo wgq panic -z <zone>` for one): straight from dom0, no prompt, no
+qube code trusted, it sets a deny-all firewall on each zone's firewall
+qube and then kills the VPN qube. The deny-all is enforced upstream in
+sys-fw's own netvm, so it holds even against a fully compromised zone,
+and it **persists across restarts** — restarting a qube cannot bring the
+tunnel back behind your back. The kill is instant: the only route ceases
+to exist, so client packets have nowhere to go. Recovery is deliberate,
+never automatic — `qvm-start` the VPN qube, then `wgq firewall --zone
+<zone>` to restore the real allowlist (the command prints these lines
+for each zone it stops).
+
 **Identity.** wgq qubes wear their own Qubes labels — `wgq` (red, like
 sys-net: the edge), `wgq-fw` (green, like sys-firewall: the filter) and
 `wgq-mgmt` (yellow) — created as named custom labels via the Admin API,
