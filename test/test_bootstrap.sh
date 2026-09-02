@@ -34,6 +34,14 @@ else
 	cat "$out"; fail "bootstrap failed on a healthy tree"
 fi
 
+if (cd "$ROOT" && sh bootstrap.sh) >"$out" 2>&1; then
+	fail "bootstrap ran with no project named"
+elif grep -q 'name one or more projects' "$out" && grep -q 'available:.*wgq' "$out"; then
+	ok "a missing project name is refused, and the available ones are listed"
+else
+	cat "$out"; fail "no-project refusal failed for the wrong reason"
+fi
+
 if (cd "$ROOT" && sh bootstrap.sh 'no such!') >"$out" 2>&1; then
 	fail "a hostile project name was accepted"
 else
@@ -44,6 +52,17 @@ if (cd "$ROOT" && sh bootstrap.sh nonexistent) >"$out" 2>&1; then
 	fail "a missing project was accepted"
 else
 	ok "missing project refused"
+fi
+
+# Several projects in one run: each is checked and gets its own dom0
+# pull/apply pair. Only wgq exists, so name it twice -- the loop must
+# process it once per name, not collapse to one.
+if (cd "$ROOT" && sh bootstrap.sh wgq wgq) >"$out" 2>&1 \
+	&& [ "$(grep -c 'airlock pull' "$out")" -eq 2 ] \
+	&& [ "$(grep -c 'airlock apply wgq' "$out")" -eq 2 ]; then
+	ok "multiple named projects each get their own dom0 commands"
+else
+	cat "$out"; fail "multi-project bootstrap went wrong"
 fi
 
 if [ "$failures" -gt 0 ]; then
