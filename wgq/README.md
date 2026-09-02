@@ -394,6 +394,19 @@ the call payload, invisible to policy) and does not need to be: the
 label is the identity Qubes draws, and both files together keep it
 dom0's alone.
 
+**Ownership.** Every qube wgq creates carries the `created-by-wgq` tag,
+and everything that lists, rewires or destroys by the `sys-fw-*` name
+grammar checks it first: a stranger's qube that happens to share the
+naming is never listed as a zone, never routed through, never converged
+by a salt re-run, and never offered for removal. A qube wearing a wgq
+label is adopted and tagged automatically (only dom0 can dress a qube,
+so the label is proof); anything else is refused with the one command
+that adopts it — `qvm-tags <qube> add created-by-wgq` — for installs
+that predate the tag. The single deliberate exception is `wgq panic`
+with no `-z`: the emergency stop sweeps by name, unfiltered, because
+blocking a similarly-named stranger's qube is a recoverable
+inconvenience while skipping an untagged wgq qube is an open line.
+
 Full teardown is `sudo wgq uninstall`: zones first
 (refusing while clients are attached), then wgq-mgmt, template, the wgq
 labels and icons, policy — each step confirmed.

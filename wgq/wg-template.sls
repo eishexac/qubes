@@ -47,6 +47,37 @@ wgq-template-clone:
     - require:
       - cmd: wgq-base-template-present
 
+# A fresh clone is tagged at birth (onchanges fires only when the clone
+# actually ran). It cannot pass the label branch of the guard below: a
+# clone inherits the BASE template's stock label until the converge.
+wgq-template-tag:
+  cmd.run:
+    - name: qvm-tags {{ tpl }} add created-by-wgq
+    - onchanges:
+      - qvm: wgq-template-clone
+
+# Adoption guard: wgq converges only qubes it made -- the tag from a
+# fresh clone, or a wgq label only dom0 could have set. An existing
+# untagged {{ tpl }} wearing a stock label is somebody else's qube (or
+# a pre-tag wgq install: the message says how to adopt it).
+{{ tpl }}-owned:
+  cmd.run:
+    - name: |
+        l=$(qvm-prefs {{ tpl }} label)
+        case "$l" in
+        wgq|wgq-fw|wgq-mgmt|wgq-tpl)
+            qvm-tags {{ tpl }} add created-by-wgq; exit 0;;
+        esac
+        echo "wgq: qube {{ tpl }} exists but was not created by wgq" >&2
+        echo "(label $l, no created-by-wgq tag). If it is yours from an" >&2
+        echo "older wgq install, adopt it and re-run:" >&2
+        echo "    qvm-tags {{ tpl }} add created-by-wgq" >&2
+        exit 1
+    - unless: qvm-tags {{ tpl }} list | grep -qx created-by-wgq
+    - require:
+      - qvm: wgq-template-clone
+      - cmd: wgq-template-tag
+
 # An existing template converges onto the wgq label on re-run.
 {{ tpl }}-label:
   cmd.run:
@@ -55,6 +86,7 @@ wgq-template-clone:
     - require:
       - qvm: wgq-template-clone
       - cmd: wgq-label-wgq-tpl
+      - cmd: {{ tpl }}-owned
 
 wgq-template-salt-connector:
   cmd.run:
@@ -73,6 +105,7 @@ wgq-template-salt-connector:
         | grep -q "^Status: install ok installed"'
     - require:
       - qvm: wgq-template-clone
+      - cmd: {{ tpl }}-owned
 
 {% else %}
 

@@ -37,6 +37,29 @@ include:
     - require:
       - cmd: wgq-label-wgq-mgmt
 
+# Adoption guard: wgq converges only qubes it made. The created-by-wgq
+# tag proves it; a qube already wearing a wgq label was dressed by dom0
+# (no VM can set labels), so it is adopted and tagged -- which is also
+# how a fresh create passes, born wearing the label. Anything else
+# under this name is somebody else's qube: the mutating states below
+# require this one, so a refusal here leaves the stranger untouched.
+{{ mgmt }}-owned:
+  cmd.run:
+    - name: |
+        l=$(qvm-prefs {{ mgmt }} label)
+        case "$l" in
+        wgq|wgq-fw|wgq-mgmt|wgq-tpl)
+            qvm-tags {{ mgmt }} add created-by-wgq; exit 0;;
+        esac
+        echo "wgq: qube {{ mgmt }} exists but was not created by wgq" >&2
+        echo "(label $l, no created-by-wgq tag). If it is yours from an" >&2
+        echo "older wgq install, adopt it and re-run:" >&2
+        echo "    qvm-tags {{ mgmt }} add created-by-wgq" >&2
+        exit 1
+    - unless: qvm-tags {{ mgmt }} list | grep -qx created-by-wgq
+    - require:
+      - qvm: {{ mgmt }}-present
+
 # An existing mgmt converges onto the wgq label on re-run.
 {{ mgmt }}-label:
   cmd.run:
@@ -44,6 +67,7 @@ include:
     - unless: qvm-prefs {{ mgmt }} label | grep -qx {{ label }}
     - require:
       - qvm: {{ mgmt }}-present
+      - cmd: {{ mgmt }}-owned
 
 {{ mgmt }}-prefs:
   qvm.prefs:
@@ -52,3 +76,4 @@ include:
     - autostart: False
     - require:
       - qvm: {{ mgmt }}-present
+      - cmd: {{ mgmt }}-owned

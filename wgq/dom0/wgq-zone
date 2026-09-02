@@ -60,6 +60,20 @@ check_qube_name() {
 
 zone_exists() { qvm-check --quiet "sys-fw-$1" 2>/dev/null; }
 
+# A qube is wgq's if it carries the created-by-wgq tag (stamped by the
+# salt states since the adoption guard) or wears a wgq label -- only
+# dom0 can dress a qube, so the label is proof; older installs predate
+# the tag and are recognized by their labels. Everything that lists,
+# rewires or destroys by the sys-fw-* NAME grammar checks this first: a
+# stranger's qube that happens to share the naming is not a zone.
+is_ours() {
+	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
+	case "$(qvm-prefs "$1" label 2>/dev/null)" in
+		wgq|wgq-fw|wgq-mgmt|wgq-tpl) return 0 ;;
+	esac
+	return 1
+}
+
 # The reserved zone 'wgq' -- the single-VPN-for-everything default -- has
 # the bare VPN qube name; every other zone follows sys-wgq-<zone>. The
 # firewall name never varies: sys-fw-<zone> stays the parseable grammar.
@@ -75,6 +89,10 @@ attach_qube() {
 	a_zone=$1 a_qube=$2
 	check_qube_name "$a_qube"
 	qvm-check --quiet "$a_qube" 2>/dev/null || die "no such qube '$a_qube'"
+	# Routing a client through a stranger's qube is the one mistake this
+	# tool must never make, so the zone's firewall must be wgq's own.
+	is_ours "sys-fw-$a_zone" \
+		|| die "sys-fw-$a_zone was not created by wgq; refusing to route $a_qube through it (if it is an old wgq install: qvm-tags sys-fw-$a_zone add created-by-wgq)"
 	a_now=$(current_netvm "$a_qube")
 	if [ "$a_now" = "sys-fw-$a_zone" ]; then
 		note "$a_qube is already attached to zone $a_zone"
@@ -201,6 +219,10 @@ cmd_detach() {
 cmd_list() {
 	found=0
 	for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
+		if ! is_ours "$fw"; then
+			note "$fw exists but was not created by wgq; not listed as a zone"
+			continue
+		fi
 		found=1
 		lz=${fw#sys-fw-}
 		clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
@@ -214,6 +236,8 @@ cmd_remove() {
 	[ $# -eq 1 ] || usage
 	check_zone "$1"
 	zone_exists "$1" || die "zone '$1' does not exist"
+	is_ours "sys-fw-$1" \
+		|| die "sys-fw-$1 was not created by wgq; refusing to destroy it (if it is an old wgq install: qvm-tags sys-fw-$1 add created-by-wgq)"
 	rclients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
 		| awk -F'|' -v fw="sys-fw-$1" '$2 == fw {print $1}' | tr '\n' ' ')
 	if [ -n "${rclients% }" ]; then

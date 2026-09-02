@@ -36,8 +36,25 @@ ans=""
 read -r ans || true
 [ "$ans" = "uninstall" ] || die "confirmation did not match; nothing touched"
 
+# A qube is wgq's if it carries the created-by-wgq tag (stamped by the
+# salt states) or wears a wgq label -- only dom0 dresses qubes, so the
+# label is proof; older installs predate the tag. Removal walks the
+# sys-fw-* NAME grammar, so this is what keeps a stranger's
+# similarly-named qube off the removal list.
+is_ours() {
+	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
+	case "$(qvm-prefs "$1" label 2>/dev/null)" in
+		wgq|wgq-fw|wgq-mgmt|wgq-tpl) return 0 ;;
+	esac
+	return 1
+}
+
 # Zones first; a zone with attached clients refuses, deliberately.
 for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
+	if ! is_ours "$fw"; then
+		note "$fw exists but was not created by wgq; leaving it alone"
+		continue
+	fi
 	zone=${fw#sys-fw-}
 	vpn="sys-wgq-$zone"
 	[ "$zone" = wgq ] && vpn=sys-wgq   # the single-VPN default zone
