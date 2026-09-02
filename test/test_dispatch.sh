@@ -21,7 +21,24 @@ cat > "$WORK/bin/qvm-run" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >> "${QLOG:?}"
 EOF
-chmod +x "$WORK/bin/qvm-run"
+# panic's tools log to the same file so order and targets can be pinned.
+for t in qvm-firewall qvm-kill; do
+cat > "$WORK/bin/$t" <<EOF
+#!/bin/sh
+printf '$t %s\n' "\$*" >> "\${QLOG:?}"
+EOF
+done
+cat > "$WORK/bin/qvm-check" <<'EOF'
+#!/bin/sh
+# Every sys-fw-* / sys-wgq* the tests reference "exists".
+for a in "$@"; do case "$a" in --quiet|--running) ;; *) n=$a ;; esac; done
+case "$n" in sys-fw-*|sys-wgq|sys-wgq-*) exit 0 ;; *) exit 1 ;; esac
+EOF
+cat > "$WORK/bin/qvm-ls" <<'EOF'
+#!/bin/sh
+printf 'sys-fw-wgq\nsys-fw-work\n'
+EOF
+chmod +x "$WORK/bin/"*
 export QLOG="$WORK/qlog"
 
 wgq() { : > "$QLOG"; env PATH="$WORK/bin:$PATH" sh "$WGQ" "$@"; }
@@ -110,6 +127,33 @@ if wgq -z work sync >"$WORK/out" 2>&1 \
 	ok "sync frames mgmt -> zone qube -> apply"
 else
 	cat "$WORK/out" "$QLOG" 2>/dev/null; fail "sync went wrong"
+fi
+
+# 11. panic -z blocks the firewall THEN kills the VPN qube, one zone.
+if wgq panic -z work >"$WORK/out" 2>&1 \
+	&& grep -q 'qvm-firewall sys-fw-work set-policy drop' "$QLOG" \
+	&& grep -q 'qvm-kill sys-wgq-work' "$QLOG" \
+	&& ! grep -q 'sys-fw-wgq' "$QLOG"; then
+	# order: firewall line must precede the kill line
+	fwline=$(grep -n 'qvm-firewall sys-fw-work set-policy' "$QLOG" | cut -d: -f1)
+	killline=$(grep -n 'qvm-kill sys-wgq-work' "$QLOG" | cut -d: -f1)
+	if [ "$fwline" -lt "$killline" ]; then
+		ok "panic -z blocks then kills one zone"
+	else
+		fail "panic blocked after killing (wrong order)"
+	fi
+else
+	cat "$WORK/out" "$QLOG" 2>/dev/null; fail "panic -z went wrong"
+fi
+
+# 12. bare panic hits every zone qvm-ls reports.
+if wgq panic >"$WORK/out" 2>&1 \
+	&& grep -q 'qvm-kill sys-wgq' "$QLOG" \
+	&& grep -q 'qvm-kill sys-wgq-work' "$QLOG" \
+	&& grep -q 'qvm-firewall sys-fw-wgq set-policy drop' "$QLOG"; then
+	ok "bare panic stops every zone"
+else
+	cat "$WORK/out" "$QLOG" 2>/dev/null; fail "bare panic went wrong"
 fi
 
 if [ "$failures" -gt 0 ]; then

@@ -45,6 +45,7 @@ MGMT=${WGQ_MGMT:-wgq-mgmt}
 
 usage() {
 	printf 'usage: %s zone <verb> ...           (dom0: add attach detach list remove)\n' "$PROG" >&2
+	printf '       %s panic [-z <zone>]         (EMERGENCY: kill + block every zone, or one)\n' "$PROG" >&2
 	printf '       %s uninstall\n' "$PROG" >&2
 	printf '       %s credential <provider>     (store the account id in %s)\n' "$PROG" "$MGMT" >&2
 	printf '       %s [-z <zone>] sync          (peer bundle: %s -> VPN qube + apply)\n' "$PROG" "$MGMT" >&2
@@ -62,6 +63,59 @@ check_zone() {
 vpn_name() {
 	if [ "$1" = wgq ]; then printf 'sys-wgq'; else printf 'sys-wgq-%s' "$1"; fi
 }
+
+# The emergency stop. Two actions per zone, in this order, straight from
+# dom0 -- no prompt, no VM code trusted:
+#   1. deny-all firewall on the zone's firewall qube. It is enforced in
+#      sys-fw's OWN netvm, upstream, so it holds even against a fully
+#      compromised zone, and it PERSISTS across restarts -- restarting a
+#      qube cannot resurrect the tunnel behind your back.
+#   2. kill the VPN qube. Instant: the only route ceases to exist, so
+#      in-flight and future client packets have nowhere to go.
+# Recovery is deliberate, never automatic: qvm-start the VPN qube, then
+# `wgq firewall --zone <z>` to restore the real allowlist.
+panic_zone() {
+	p_zone=$1
+	p_fw="sys-fw-$p_zone"
+	p_vpn=$(vpn_name "$p_zone")
+	if qvm-check --quiet "$p_fw" 2>/dev/null; then
+		note "$p_zone: blocking $p_fw (deny-all, enforced upstream, survives restart)"
+		qvm-firewall "$p_fw" reset 2>/dev/null || true
+		qvm-firewall "$p_fw" set-policy drop 2>/dev/null \
+			|| warn "$p_zone: could not set deny-all on $p_fw"
+	fi
+	if qvm-check --quiet "$p_vpn" 2>/dev/null; then
+		note "$p_zone: killing $p_vpn"
+		qvm-kill "$p_vpn" 2>/dev/null || warn "$p_zone: could not kill $p_vpn"
+	fi
+	ok "$p_zone: dark. Restore with: qvm-start $p_vpn && $PROG firewall --zone $p_zone"
+}
+
+cmd_panic() {
+	# Accept -z after the verb too (`panic -z work`), the shape the
+	# usage line advertises.
+	case "${1:-}" in
+		-z|--zone)
+			[ $# -eq 2 ] || usage
+			zone=$2; PANIC_ONE=1; shift 2 ;;
+	esac
+	[ $# -eq 0 ] || usage
+	if [ "$PANIC_ONE" = 1 ]; then
+		check_zone "$zone"
+		zone_exists "$zone" || die "zone '$zone' does not exist"
+		panic_zone "$zone"
+		return 0
+	fi
+	# No -z: every zone. Emergencies do not pause to enumerate.
+	p_any=0
+	for p_fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
+		p_any=1
+		panic_zone "${p_fw#sys-fw-}"
+	done
+	[ "$p_any" = 1 ] || warn "no wgq zones found; nothing to stop"
+}
+
+zone_exists() { qvm-check --quiet "sys-fw-$1" 2>/dev/null; }
 
 # Single-quote an argument for the shell inside the target qube; the
 # only character that can escape a single-quoted string is the quote
@@ -83,11 +137,13 @@ run_in() {
 }
 
 zone=wgq
+PANIC_ONE=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 		-z|--zone)
 			[ $# -ge 2 ] || usage
 			zone=$2
+			PANIC_ONE=1
 			shift 2 ;;
 		-*) usage ;;
 		*) break ;;
@@ -97,6 +153,8 @@ done
 verb=$1
 
 case "$verb" in
+	panic)
+		shift; cmd_panic "$@" ;;
 	zone)
 		shift
 		# The sub-tool's own hints then name the command the operator
