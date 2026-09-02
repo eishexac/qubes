@@ -106,7 +106,11 @@ cmd_panic() {
 		panic_zone "$zone"
 		return 0
 	fi
-	# No -z: every zone. Emergencies do not pause to enumerate.
+	# No -z: every zone, by NAME, deliberately unfiltered by the
+	# created-by-wgq tag the lifecycle verbs check. An emergency stop
+	# must fail closed: blocking a similarly-named stranger's qube is a
+	# recoverable inconvenience, skipping a wgq qube that predates the
+	# tag is an open line. Emergencies do not pause to enumerate.
 	p_any=0
 	for p_fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
 		p_any=1

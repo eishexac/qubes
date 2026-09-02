@@ -97,6 +97,8 @@ if [ -n "$zone" ]; then
 	[ "$zone" = wgq ] && vpn=sys-wgq
 	printf '%s|AppVM|sys-firewall|True\n' "$vpn" >> "${FAKEQ:?}"
 	printf 'sys-fw-%s|AppVM|%s|True\n' "$zone" "$vpn" >> "$FAKEQ"
+	# the adoption guard in wg-zone.sls tags what it makes
+	printf '%s|created-by-wgq\nsys-fw-%s|created-by-wgq\n' "$vpn" "$zone" >> "${TAGS:?}"
 fi
 EOF
 
@@ -112,8 +114,19 @@ grep -v "^${name}|" "${FAKEQ:?}" > "$FAKEQ.tmp"; mv "$FAKEQ.tmp" "$FAKEQ"
 printf 'removed %s\n' "$name" >> "${QCTL_LOG:?}"
 EOF
 
+cat > "$WORK/bin/qvm-tags" <<'EOF'
+#!/bin/sh
+name=$1 verb=$2
+case "$verb" in
+	add)  grep -qx "$name|$3" "${TAGS:?}" 2>/dev/null \
+		|| printf '%s|%s\n' "$name" "$3" >> "$TAGS" ;;
+	list) awk -F'|' -v n="$name" '$1 == n {print $2}' "${TAGS:?}" ;;
+esac
+EOF
+
 chmod +x "$WORK/bin/"*
-export FAKEQ="$WORK/qubes" QCTL_LOG="$WORK/qctl.log" RUNNING="$WORK/running"
+export FAKEQ="$WORK/qubes" QCTL_LOG="$WORK/qctl.log" RUNNING="$WORK/running" TAGS="$WORK/tags"
+: > "$TAGS"
 : > "$QCTL_LOG"
 printf 'sys-net\nsys-firewall\n' > "$RUNNING"
 
@@ -263,6 +276,34 @@ if printf 'wgq\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove wgq >"$WORK/out
 	ok "singleton zone removal takes the bare-named qube"
 else
 	cat "$WORK/out"; fail "singleton removal went wrong"
+fi
+
+# 12. A stranger's qube sharing the sys-fw-* grammar is not a zone: not
+# listed, not routed through, not destroyed. The created-by-wgq tag
+# stamped at creation is the proof; a name proves nothing.
+printf 'sys-fw-alien|AppVM|sys-firewall|True\n' >> "$FAKEQ"
+printf 'sys-fw-alien\n' >> "$RUNNING"
+if zone list >"$WORK/out" 2>&1 \
+	&& grep -q 'sys-fw-alien exists but was not created by wgq' "$WORK/out" \
+	&& ! grep -q '^alien ' "$WORK/out"; then
+	ok "list refuses to present a stranger's qube as a zone"
+else
+	cat "$WORK/out"; fail "a foreign qube was listed as a zone"
+fi
+if zone attach alien media >"$WORK/out" 2>&1; then
+	fail "attach routed a client through a stranger's qube"
+elif grep -q 'refusing to route' "$WORK/out" \
+	&& [ "$(netvm_of media)" = "sys-fw-z2" ]; then
+	ok "attach refuses a firewall wgq did not make"
+else
+	cat "$WORK/out"; fail "the foreign-attach refusal failed for the wrong reason"
+fi
+if printf 'alien\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove alien >"$WORK/out" 2>&1; then
+	fail "remove destroyed a stranger's qube"
+elif grep -q 'refusing to destroy' "$WORK/out" && grep -q '^sys-fw-alien|' "$FAKEQ"; then
+	ok "remove refuses a firewall wgq did not make"
+else
+	cat "$WORK/out"; fail "the foreign-remove refusal failed for the wrong reason"
 fi
 
 if [ "$failures" -gt 0 ]; then

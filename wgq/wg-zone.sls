@@ -52,6 +52,29 @@ wgq-vpn-{{ zone }}-present:
     - require:
       - cmd: wgq-label-wgq
 
+# Adoption guard: wgq converges only qubes it made. The created-by-wgq
+# tag proves it; a qube already wearing a wgq label was dressed by dom0
+# (no VM can set labels), so it is adopted and tagged -- which is also
+# how a fresh create passes, born wearing the label. Anything else
+# under this name is somebody else's qube: every mutating state below
+# requires this one, so a refusal here leaves the stranger untouched.
+wgq-vpn-{{ zone }}-owned:
+  cmd.run:
+    - name: |
+        l=$(qvm-prefs {{ vpnq }} label)
+        case "$l" in
+        wgq|wgq-fw|wgq-mgmt|wgq-tpl)
+            qvm-tags {{ vpnq }} add created-by-wgq; exit 0;;
+        esac
+        echo "wgq: qube {{ vpnq }} exists but was not created by wgq" >&2
+        echo "(label $l, no created-by-wgq tag). If it is yours from an" >&2
+        echo "older wgq install, adopt it and re-run:" >&2
+        echo "    qvm-tags {{ vpnq }} add created-by-wgq" >&2
+        exit 1
+    - unless: qvm-tags {{ vpnq }} list | grep -qx created-by-wgq
+    - require:
+      - qvm: wgq-vpn-{{ zone }}-present
+
 wgq-vpn-{{ zone }}-prefs:
   qvm.prefs:
     - name: {{ vpnq }}
@@ -64,6 +87,7 @@ wgq-vpn-{{ zone }}-prefs:
     - autostart: False
     - require:
       - qvm: wgq-vpn-{{ zone }}-present
+      - cmd: wgq-vpn-{{ zone }}-owned
 
 # The service flag is what 50-wgq keys its role decision on: a marked qube
 # that is not yet configured FAILS CLOSED (forwards nothing) instead of
@@ -76,6 +100,7 @@ wgq-vpn-{{ zone }}-service:
     - unless: qvm-features {{ vpnq }} service.wgq-vpn | grep -qx 1
     - require:
       - qvm: wgq-vpn-{{ zone }}-present
+      - cmd: wgq-vpn-{{ zone }}-owned
 
 # servicevm is what gives sys-net and sys-firewall their system-qube look
 # and grouping in the GUI (the Service section, the dot-marked icon).
@@ -88,6 +113,7 @@ wgq-vpn-{{ zone }}-servicevm:
     - unless: qvm-features {{ vpnq }} servicevm | grep -qx 1
     - require:
       - qvm: wgq-vpn-{{ zone }}-present
+      - cmd: wgq-vpn-{{ zone }}-owned
 
 sys-fw-{{ zone }}-servicevm:
   cmd.run:
@@ -95,6 +121,7 @@ sys-fw-{{ zone }}-servicevm:
     - unless: qvm-features sys-fw-{{ zone }} servicevm | grep -qx 1
     - require:
       - qvm: sys-fw-{{ zone }}-present
+      - cmd: sys-fw-{{ zone }}-owned
 
 # The tag is what the dom0 policy grants against, so wgq-mgmt can rewrite
 # the firewall of these qubes and of nothing else.
@@ -104,6 +131,7 @@ wgq-vpn-{{ zone }}-tag:
     - unless: qvm-tags {{ vpnq }} list | grep -qx wgq-zone
     - require:
       - qvm: wgq-vpn-{{ zone }}-present
+      - cmd: wgq-vpn-{{ zone }}-owned
 
 # An existing zone converges too: labels are identity, not creation-day
 # trivia, so a re-run moves old qubes onto the wgq labels.
@@ -113,6 +141,7 @@ wgq-vpn-{{ zone }}-label:
     - unless: qvm-prefs {{ vpnq }} label | grep -qx {{ label }}
     - require:
       - qvm: wgq-vpn-{{ zone }}-present
+      - cmd: wgq-vpn-{{ zone }}-owned
 
 sys-fw-{{ zone }}-present:
   qvm.present:
@@ -122,12 +151,30 @@ sys-fw-{{ zone }}-present:
     - require:
       - cmd: wgq-label-wgq-fw
 
+sys-fw-{{ zone }}-owned:
+  cmd.run:
+    - name: |
+        l=$(qvm-prefs sys-fw-{{ zone }} label)
+        case "$l" in
+        wgq|wgq-fw|wgq-mgmt|wgq-tpl)
+            qvm-tags sys-fw-{{ zone }} add created-by-wgq; exit 0;;
+        esac
+        echo "wgq: qube sys-fw-{{ zone }} exists but was not created by wgq" >&2
+        echo "(label $l, no created-by-wgq tag). If it is yours from an" >&2
+        echo "older wgq install, adopt it and re-run:" >&2
+        echo "    qvm-tags sys-fw-{{ zone }} add created-by-wgq" >&2
+        exit 1
+    - unless: qvm-tags sys-fw-{{ zone }} list | grep -qx created-by-wgq
+    - require:
+      - qvm: sys-fw-{{ zone }}-present
+
 sys-fw-{{ zone }}-label:
   cmd.run:
     - name: qvm-prefs sys-fw-{{ zone }} label {{ label_fw }}
     - unless: qvm-prefs sys-fw-{{ zone }} label | grep -qx {{ label_fw }}
     - require:
       - qvm: sys-fw-{{ zone }}-present
+      - cmd: sys-fw-{{ zone }}-owned
 
 sys-fw-{{ zone }}-prefs:
   qvm.prefs:
@@ -138,5 +185,6 @@ sys-fw-{{ zone }}-prefs:
     - require:
       - qvm: sys-fw-{{ zone }}-present
       - qvm: wgq-vpn-{{ zone }}-prefs
+      - cmd: sys-fw-{{ zone }}-owned
 
 {% endif %}
