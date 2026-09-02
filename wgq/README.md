@@ -382,6 +382,18 @@ the template include it too), the icons living in dom0's
 process searches; updates leave unowned files alone). The GUI
 picks them up at the latest on the next login.
 
+Two policy files make the identity permanent rather than merely
+default. `30-wgq-labels.policy` denies every VM the wgq label names
+themselves (the label name is the qrexec argument, so it can be pinned
+by name). `30-wgq-creation.policy` restates the Admin API's deny
+default for creating qubes, cloning them and changing labels — adding
+nothing today, but sorted at 30 so a later broad `admin.*` allow to
+some management qube can never quietly include the power to mint or
+dress qubes. A qube's *name* cannot be pinned by policy (it travels in
+the call payload, invisible to policy) and does not need to be: the
+label is the identity Qubes draws, and both files together keep it
+dom0's alone.
+
 Full teardown is `sudo wgq uninstall`: zones first
 (refusing while clients are attached), then wgq-mgmt, template, the wgq
 labels and icons, policy — each step confirmed.

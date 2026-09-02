@@ -106,6 +106,12 @@ if [ -f /etc/qubes/policy.d/30-wgq-labels.policy ]; then
 	fi
 fi
 
+if [ -f /etc/qubes/policy.d/30-wgq-creation.policy ]; then
+	if step "remove the only-dom0-creates denies /etc/qubes/policy.d/30-wgq-creation.policy"; then
+		rm -f /etc/qubes/policy.d/30-wgq-creation.policy
+	fi
+fi
+
 printf '\n'
 ok "done. The reviewed tree remains; remove it yourself with:"
 printf '    sudo rm -r /srv/salt/wgq /srv/salt/.ingest-receipts/wgq\n'
