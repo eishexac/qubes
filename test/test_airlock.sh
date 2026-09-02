@@ -1,7 +1,7 @@
 #!/bin/sh
 #
-# Tests for dom0/ingest, run without a qube: QUBES_INGEST_TRANSPORT is pointed
-# at a local tar, QUBES_INGEST_SALT_ROOT at a scratch directory, and the
+# Tests for dom0/airlock, run without a qube: AIRLOCK_TRANSPORT is pointed
+# at a local tar, AIRLOCK_SALT_ROOT at a scratch directory, and the
 # confirmation is answered over stdin exactly as an operator would type
 # it. The cases mirror the script's promises: nothing installs without a
 # yes, nothing installs that the scan refused, and the receipt notices
@@ -9,13 +9,13 @@
 
 set -u
 
-INGEST=$(cd "$(dirname "$0")/.." && pwd)/dom0/ingest
+INGEST=$(cd "$(dirname "$0")/.." && pwd)/dom0/airlock
 WORK=$(mktemp -d) || exit 2
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
-export QUBES_INGEST_SALT_ROOT="$WORK/salt"
+export AIRLOCK_SALT_ROOT="$WORK/salt"
 export PAGER=cat
-mkdir -p "$QUBES_INGEST_SALT_ROOT"
+mkdir -p "$AIRLOCK_SALT_ROOT"
 
 # The fake transport ignores the qube name and tars the local "repo".
 cat > "$WORK/transport" <<'EOF'
@@ -23,7 +23,7 @@ cat > "$WORK/transport" <<'EOF'
 tar -C "$2" -cf - "$3"
 EOF
 chmod +x "$WORK/transport"
-export QUBES_INGEST_TRANSPORT="$WORK/transport"
+export AIRLOCK_TRANSPORT="$WORK/transport"
 
 REPO="$WORK/repo"
 mkdir -p "$REPO/demo/salt"
@@ -41,8 +41,8 @@ run_pull() { printf '%b' "$1" | "$INGEST" pull testqube demo "$REPO" >"$WORK/out
 
 # 1. A fresh pull with a typed yes installs the tree and writes a receipt.
 if run_pull '\nyes\n' \
-	&& [ -f "$QUBES_INGEST_SALT_ROOT/demo/readme.txt" ] \
-	&& [ -f "$QUBES_INGEST_SALT_ROOT/.ingest-receipts/demo" ]; then
+	&& [ -f "$AIRLOCK_SALT_ROOT/demo/readme.txt" ] \
+	&& [ -f "$AIRLOCK_SALT_ROOT/.ingest-receipts/demo" ]; then
 	ok "fresh pull installs after yes"
 else
 	cat "$WORK/out"; fail "fresh pull did not install"
@@ -67,7 +67,7 @@ printf 'second version\n' > "$REPO/demo/readme.txt"
 if run_pull '\nno\n'; then
 	fail "a 'no' answer still exited 0"
 else
-	if grep -q 'first version' "$QUBES_INGEST_SALT_ROOT/demo/readme.txt"; then
+	if grep -q 'first version' "$AIRLOCK_SALT_ROOT/demo/readme.txt"; then
 		ok "declined pull left the installed tree alone"
 	else
 		fail "declined pull modified the installed tree"
@@ -78,7 +78,7 @@ fi
 if run_pull '\nyes\n' \
 	&& grep -q '^-first version' "$WORK/out" \
 	&& grep -q '^+second version' "$WORK/out" \
-	&& grep -q 'second version' "$QUBES_INGEST_SALT_ROOT/demo/readme.txt"; then
+	&& grep -q 'second version' "$AIRLOCK_SALT_ROOT/demo/readme.txt"; then
 	ok "update pull diffs and installs the change"
 else
 	cat "$WORK/out"; fail "update pull went wrong"
@@ -90,7 +90,7 @@ printf 'third version\n' > "$REPO/demo/readme.txt"
 if run_pull 'n\nyes\n' \
 	&& grep -q 'review skipped' "$WORK/out" \
 	&& ! grep -q '^+third version' "$WORK/out" \
-	&& grep -q 'third version' "$QUBES_INGEST_SALT_ROOT/demo/readme.txt"; then
+	&& grep -q 'third version' "$AIRLOCK_SALT_ROOT/demo/readme.txt"; then
 	ok "skipping the review is typed, warned about, and still gated on yes"
 else
 	cat "$WORK/out"; fail "the review-skip path went wrong"
@@ -102,7 +102,7 @@ if "$INGEST" status >"$WORK/out" 2>&1 && grep -q 'ok, as approved' "$WORK/out"; 
 else
 	cat "$WORK/out"; fail "status did not report ok"
 fi
-printf 'tampered\n' >> "$QUBES_INGEST_SALT_ROOT/demo/readme.txt"
+printf 'tampered\n' >> "$AIRLOCK_SALT_ROOT/demo/readme.txt"
 if "$INGEST" status >"$WORK/out" 2>&1; then
 	fail "status exited 0 for a tampered tree"
 elif grep -q 'MODIFIED' "$WORK/out"; then
@@ -164,8 +164,8 @@ chmod +x "$WORK/qubesctl"
 
 run_apply() {
 	# $1 = answers piped to the prompts, $2 = fake qubesctl exit code
-	printf '%b' "$1" | env QUBES_INGEST_QUBESCTL="$WORK/qubesctl" \
-		QUBES_INGEST_POLICY_DIR="$WORK/policy.d" \
+	printf '%b' "$1" | env AIRLOCK_QUBESCTL="$WORK/qubesctl" \
+		AIRLOCK_POLICY_DIR="$WORK/policy.d" \
 		QLOG="$WORK/qlog" QRC="${2:-0}" \
 		"$INGEST" apply demo >"$WORK/out" 2>&1
 }
@@ -250,7 +250,7 @@ else
 fi
 
 # 16. A tree that drifted since approval is not applied.
-printf 'tampered\n' >> "$QUBES_INGEST_SALT_ROOT/demo/readme.txt"
+printf 'tampered\n' >> "$AIRLOCK_SALT_ROOT/demo/readme.txt"
 reset_apply
 if run_apply 'y\n'; then
 	fail "apply ran on a tree that drifted from its receipt"
@@ -274,10 +274,10 @@ chmod +x "$WORK/qvm-check" "$WORK/qvm-template"
 
 run_apply_t() {
 	# $1 = answers, $2 = qvm-check exit code (0 = template present)
-	printf '%b' "$1" | env QUBES_INGEST_QUBESCTL="$WORK/qubesctl" \
-		QUBES_INGEST_POLICY_DIR="$WORK/policy.d" \
-		QUBES_INGEST_QVM_TEMPLATE="$WORK/qvm-template" \
-		QUBES_INGEST_QVM_CHECK="$WORK/qvm-check" \
+	printf '%b' "$1" | env AIRLOCK_QUBESCTL="$WORK/qubesctl" \
+		AIRLOCK_POLICY_DIR="$WORK/policy.d" \
+		AIRLOCK_QVM_TEMPLATE="$WORK/qvm-template" \
+		AIRLOCK_QVM_CHECK="$WORK/qvm-check" \
 		QLOG="$WORK/qlog" QTLOG="$WORK/qtlog" QCHECK_RC="$2" QRC=0 \
 		"$INGEST" apply demo >"$WORK/out" 2>&1
 }
@@ -315,5 +315,5 @@ if [ "$failures" -gt 0 ]; then
 	printf '%s failure(s)\n' "$failures"
 	exit 1
 fi
-printf 'test_ingest: all passed\n'
+printf 'test_airlock: all passed\n'
 exit 0

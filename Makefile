@@ -11,7 +11,7 @@
 #     version  print the project's version, one line -- release tags are
 #              <project>-v<version>, and CI matches them against this
 #
-# `check` also covers the shared tooling in this directory: the ingest
+# `check` also covers the shared tooling in this directory: the airlock
 # script is linted and exercised here because it belongs to the
 # repository, not to any one project.
 
@@ -20,7 +20,7 @@ PYTHON ?= python3
 PROJECTS := $(patsubst %/Makefile,%,$(wildcard */Makefile))
 
 # strip, or empty wildcards leave a lone space that reads as non-empty.
-SELF_SHELL := $(strip $(wildcard bootstrap.sh) $(wildcard dom0/ingest) $(wildcard test/*.sh))
+SELF_SHELL := $(strip $(wildcard bootstrap.sh) $(wildcard dom0/airlock) $(wildcard test/*.sh))
 
 .PHONY: all build check verify clean self-check
 

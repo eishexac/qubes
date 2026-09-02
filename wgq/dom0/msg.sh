@@ -13,7 +13,7 @@
 # from the escape codes the coloured and plain forms are byte-identical,
 # so nothing that parses this output can tell the difference.
 #
-# qubes-ingest carries an inlined copy of this file (it must remain a
+# airlock carries an inlined copy of this file (it must remain a
 # single file you can carry into dom0 by hand); keep the two in step.
 
 PROG=${PROG:-wgq}

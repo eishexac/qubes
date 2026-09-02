@@ -85,14 +85,14 @@ repo:      $REPO
 
 In dom0 -- FIRST TIME ONLY -- install the airlock, and read it first:
 
-    qvm-run --pass-io $NAME 'cat $REPO/dom0/ingest' > /tmp/qubes-ingest
-    less /tmp/qubes-ingest
-    sudo install -m 0755 /tmp/qubes-ingest /usr/local/bin/qubes-ingest
+    qvm-run --pass-io $NAME 'cat $REPO/dom0/airlock' > /tmp/airlock
+    less /tmp/airlock
+    sudo install -m 0755 /tmp/airlock /usr/local/bin/airlock
 
 Then, still in dom0:
 
-    sudo qubes-ingest pull $NAME $PROJECT $REPO
-    sudo qubes-ingest apply $PROJECT
+    sudo airlock pull $NAME $PROJECT $REPO
+    sudo airlock apply $PROJECT
 
 The pull shows everything as a diff and installs only after you type
 "yes"; apply then walks the project's install plan one confirmed step at

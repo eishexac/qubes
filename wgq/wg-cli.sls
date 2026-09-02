@@ -3,7 +3,7 @@
 
     A symlink, deliberately, not a copy: the file that runs is always
     the one sitting in the airlocked tree under /srv/salt, so it can
-    never drift from what `qubes-ingest status` verifies, and every
+    never drift from what `airlock status` verifies, and every
     approved pull updates the command in place.
 
     That choice makes `sudo` part of the command: /srv/salt is
