@@ -13,10 +13,14 @@
         wgq-fw    0x73D216  green, like sys-firewall -- the filter
         wgq-mgmt  0xEDD400  yellow               -- the provisioning qube
 
-    The icon files land in dom0's /usr/local (per-machine, survives
-    updates); the GUI picks them up after the cache refresh, at the
-    latest on the next login. wg-zone and wg-mgmt include this state, so
-    a skipped apply step only defers it to the first zone or mgmt run.
+    The icon files land in /usr/share/icons -- the one base dir every
+    GUI process searches unconditionally (dom0 sessions do not reliably
+    put /usr/local/share on XDG_DATA_DIRS, and a name the theme cannot
+    resolve renders as a BLANK icon in the 4.3 menu). The files are
+    unowned by any package, so system updates leave them alone. The GUI
+    picks them up after the cache refresh, at the latest on the next
+    login. wg-zone and wg-mgmt include this state, so a skipped apply
+    step only defers it to the first zone or mgmt run.
 
     qubesd-query is used because no qvm-* tool wraps label creation; the
     command is deliberately spelled out here where it can be read.
@@ -40,7 +44,7 @@ wgq-label-wgq-mgmt:
 {% for icon in ['servicevm-wgq.svg', 'servicevm-wgq-fw.svg', 'appvm-wgq-mgmt.svg'] %}
 wgq-icon-{{ icon }}:
   file.managed:
-    - name: /usr/local/share/icons/hicolor/scalable/apps/{{ icon }}
+    - name: /usr/share/icons/hicolor/scalable/apps/{{ icon }}
     - source: salt://wgq/dom0/icons/{{ icon }}
     - makedirs: True
     - mode: '0644'
@@ -50,7 +54,7 @@ wgq-icon-{{ icon }}:
 # failed cache rebuild must not fail the install.
 wgq-icon-cache:
   cmd.run:
-    - name: gtk-update-icon-cache -f -t /usr/local/share/icons/hicolor || true
+    - name: gtk-update-icon-cache -f -t /usr/share/icons/hicolor || true
     - onchanges:
 {% for icon in ['servicevm-wgq.svg', 'servicevm-wgq-fw.svg', 'appvm-wgq-mgmt.svg'] %}
       - file: wgq-icon-{{ icon }}
