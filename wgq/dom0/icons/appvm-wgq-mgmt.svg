@@ -7,7 +7,7 @@
     Qubes resolves icons as <class>-<label-name>; an app qube wearing the
     custom label 'wgq-mgmt' resolves exactly this name, so no stock icon
     is shadowed and no stock qube can wear it. Installed by wg-icons.sls
-    into dom0's /usr/local/share/icons/hicolor/scalable/apps/.
+    into dom0's /usr/share/icons/hicolor/scalable/apps/.
 
     Cube geometry derived from qubes-artwork's appvm icons,
     (c) Invisible Things Lab, CC BY-SA 4.0. This file: CC BY-SA 4.0.
