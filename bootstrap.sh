@@ -76,7 +76,7 @@ for PROJECT in "$@"; do
 	# for them. The artifact itself is already built and about to be hashed.
 	find "$PROJECT" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	# shellcheck disable=SC2086 # SHA may be two words (shasum -a 256)
-	h=$(cd "$PROJECT" && $SHA dist/* 2>/dev/null || :)
+	h=$(cd "$PROJECT" || exit 0; $SHA dist/* 2>/dev/null || :)
 	ARTIFACTS="${ARTIFACTS}    ${PROJECT}: ${h:-none}
 "
 done
