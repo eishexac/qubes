@@ -40,26 +40,30 @@ wgq-base-template-present:
         sudo qubes-dom0-update qubes-template-debian-13-minimal" >&2; exit 1
     - unless: qvm-check --quiet {{ base }}
 
+# The clone and its proof of origin are ONE state: qvm-clone then
+# qvm-tags in the same shell. A clone inherits the BASE's stock label,
+# so unlike the zone qubes (born wearing a wgq label) a fresh template
+# has nothing the guard below could recognize -- the tag stamped here,
+# in the same breath as creation, is what makes the fresh path
+# unambiguous. (An earlier version tagged in a second state fired by
+# onchanges of a qvm.clone state; the module's change reporting never
+# triggered it, and every fresh install died at the guard.)
 wgq-template-clone:
-  qvm.clone:
-    - name: {{ tpl }}
-    - source: {{ base }}
+  cmd.run:
+    - name: |
+        set -e
+        qvm-clone {{ base }} {{ tpl }}
+        qvm-tags {{ tpl }} add created-by-wgq
+    - unless: qvm-check --quiet {{ tpl }}
     - require:
       - cmd: wgq-base-template-present
 
-# A fresh clone is tagged at birth (onchanges fires only when the clone
-# actually ran). It cannot pass the label branch of the guard below: a
-# clone inherits the BASE template's stock label until the converge.
-wgq-template-tag:
-  cmd.run:
-    - name: qvm-tags {{ tpl }} add created-by-wgq
-    - onchanges:
-      - qvm: wgq-template-clone
-
 # Adoption guard: wgq converges only qubes it made -- the tag from a
 # fresh clone, or a wgq label only dom0 could have set. An existing
-# untagged {{ tpl }} wearing a stock label is somebody else's qube (or
-# a pre-tag wgq install: the message says how to adopt it).
+# untagged {{ tpl }} wearing a stock label is somebody else's qube, a
+# pre-tag wgq install, or a clone orphaned by an interruption between
+# qvm-clone and qvm-tags above; only a human can tell those apart, so
+# the message says how to adopt it and the guard refuses to guess.
 {{ tpl }}-owned:
   cmd.run:
     - name: |
@@ -69,14 +73,14 @@ wgq-template-tag:
             qvm-tags {{ tpl }} add created-by-wgq; exit 0;;
         esac
         echo "wgq: qube {{ tpl }} exists but was not created by wgq" >&2
-        echo "(label $l, no created-by-wgq tag). If it is yours from an" >&2
-        echo "older wgq install, adopt it and re-run:" >&2
+        echo "(label $l, no created-by-wgq tag). If it is yours -- an" >&2
+        echo "older wgq install, or a clone from an interrupted run --" >&2
+        echo "adopt it and re-run:" >&2
         echo "    qvm-tags {{ tpl }} add created-by-wgq" >&2
         exit 1
     - unless: qvm-tags {{ tpl }} list | grep -qx created-by-wgq
     - require:
-      - qvm: wgq-template-clone
-      - cmd: wgq-template-tag
+      - cmd: wgq-template-clone
 
 # An existing template converges onto the wgq label on re-run.
 {{ tpl }}-label:
@@ -84,7 +88,7 @@ wgq-template-tag:
     - name: qvm-prefs {{ tpl }} label {{ label_tpl }}
     - unless: qvm-prefs {{ tpl }} label | grep -qx {{ label_tpl }}
     - require:
-      - qvm: wgq-template-clone
+      - cmd: wgq-template-clone
       - cmd: wgq-label-wgq-tpl
       - cmd: {{ tpl }}-owned
 
@@ -104,7 +108,7 @@ wgq-template-salt-connector:
         'dpkg-query -s qubes-mgmt-salt-vm-connector 2>/dev/null
         | grep -q "^Status: install ok installed"'
     - require:
-      - qvm: wgq-template-clone
+      - cmd: wgq-template-clone
       - cmd: {{ tpl }}-owned
 
 {% else %}
