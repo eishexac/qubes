@@ -23,8 +23,14 @@
 
 {% set base = salt['pillar.get']('wgq:base_template', 'debian-13-minimal') %}
 {% set tpl  = salt['pillar.get']('wgq:template', 'debian-13-wgq') %}
+{% set label_tpl = salt['pillar.get']('wgq:label_tpl', 'wgq-tpl') %}
 
 {% if grains['id'] == 'dom0' %}
+
+{#- The custom label (created in wg-icons.sls) gives the template its
+    own icon; black follows the stock template convention. -#}
+include:
+  - wgq.wg-icons
 
 # Fail with an instruction rather than silently pulling a template down.
 wgq-base-template-present:
@@ -40,6 +46,15 @@ wgq-template-clone:
     - source: {{ base }}
     - require:
       - cmd: wgq-base-template-present
+
+# An existing template converges onto the wgq label on re-run.
+{{ tpl }}-label:
+  cmd.run:
+    - name: qvm-prefs {{ tpl }} label {{ label_tpl }}
+    - unless: qvm-prefs {{ tpl }} label | grep -qx {{ label_tpl }}
+    - require:
+      - qvm: wgq-template-clone
+      - cmd: wgq-label-wgq-tpl
 
 wgq-template-salt-connector:
   cmd.run:

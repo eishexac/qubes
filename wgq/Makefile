@@ -69,6 +69,10 @@ check:
 	else \
 		printf 'shellcheck NOT INSTALLED - shell went unlinted\n'; \
 	fi
+	@for f in dom0/icons/*.svg; do \
+		$(PYTHON) -c "import sys,xml.dom.minidom as m; m.parse('$$f')" \
+			|| { printf 'invalid SVG (XML not well-formed): %s\n' "$$f"; exit 1; }; \
+	done; printf 'icons ok (well-formed SVG)\n'
 	PYTHONPATH=src $(PYTHON) -m wgq --help >/dev/null && printf 'cli ok\n'
 	PYTHONPATH=src $(PYTHON) -m unittest discover -s test -p 'test_*.py' -q
 	@if $(PYTHON) -c 'import yaml, jinja2' 2>/dev/null; then \

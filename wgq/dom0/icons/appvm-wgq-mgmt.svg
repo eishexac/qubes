@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
     wgq-mgmt icon (label 'wgq-mgmt'): the Qubes app cube with a terminal
-    prompt on its face and an RJ45 socket recessed into its body face --
+    prompt on its face and an RJ45 socket recessed into its body face —
     commands are typed here. Yellow, the label wg-mgmt always had.
 
     Qubes resolves icons as <class>-<label-name>; an app qube wearing the
@@ -16,7 +16,7 @@
   <path d="M45.0002 33.6788V14.3215C45.0002 12.8861 44.2311 11.5607 42.9847 10.8486L25.9846 1.13426C24.7548 0.431567 23.2452 0.43157 22.0155 1.13427L5.01544 10.8486C3.76914 11.5607 3 12.8861 3 14.3215V33.6788C3 35.1142 3.76916 36.4396 5.01547 37.1518L22.0157 46.866C23.2454 47.5687 24.755 47.5687 25.9847 46.866L42.9848 37.1518C44.2311 36.4396 45.0002 35.1142 45.0002 33.6788Z" fill="#EAB308"/>
   <path d="M3 33.6788C3 35.1142 3.76915 36.4396 5.01546 37.1518L22.055 46.8886C22.9217 47.3838 24 46.758 24 45.7599V26.3215C24 24.886 23.2308 23.5606 21.9845 22.8485L4.94498 13.1117C4.07832 12.6164 3 13.2422 3 14.2404V33.6788Z" fill="#A16207"/>
   <path d="M 10 14 L 22 24 L 10 34 M 27 34 L 40 34" transform="translate(4.5 15.5) skewY(30) scale(0.3)" fill="none" stroke="#FEF08A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  <g transform="translate(26.58 26.65) skewY(-30) scale(0.33)">
+  <g transform="translate(24.42 25.74) skewY(-30) scale(0.42)">
     <path d="M 10 13.5 L 38 13.5 L 38 29.5 L 32 29.5 L 32 34.5 L 16 34.5 L 16 29.5 L 10 29.5 Z" fill="#A16207"/>
     <path d="M 12 15.5 L 36 15.5 L 36 27.5 L 30.5 27.5 L 30.5 32.5 L 17.5 32.5 L 17.5 27.5 L 12 27.5 Z" fill="#0A0A0C"/>
     <path d="M 12.8 21.5 L 35.2 21.5 L 35.2 27 L 12.8 27 Z" fill="#26221B"/>
