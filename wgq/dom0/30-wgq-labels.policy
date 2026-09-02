@@ -14,3 +14,5 @@ admin.label.Create +wgq-fw * @adminvm deny notify=yes
 admin.label.Remove +wgq-fw * @adminvm deny notify=yes
 admin.label.Create +wgq-mgmt * @adminvm deny notify=yes
 admin.label.Remove +wgq-mgmt * @adminvm deny notify=yes
+admin.label.Create +wgq-tpl * @adminvm deny notify=yes
+admin.label.Remove +wgq-tpl * @adminvm deny notify=yes

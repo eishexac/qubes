@@ -81,11 +81,11 @@ fi
 ICON_DIR=/usr/share/icons/hicolor/scalable/apps
 if [ -e "$ICON_DIR/servicevm-wgq.svg" ] \
 	|| qubesd-query --fail -e dom0 admin.label.Get dom0 wgq >/dev/null 2>&1; then
-	if step "remove the wgq identity (custom labels wgq/wgq-fw/wgq-mgmt and the icon files)"; then
+	if step "remove the wgq identity (custom labels wgq/wgq-fw/wgq-mgmt/wgq-tpl and the icon files)"; then
 		rm -f "$ICON_DIR/servicevm-wgq.svg" "$ICON_DIR/servicevm-wgq-fw.svg" \
-			"$ICON_DIR/appvm-wgq-mgmt.svg"
+			"$ICON_DIR/appvm-wgq-mgmt.svg" "$ICON_DIR/templatevm-wgq-tpl.svg"
 		gtk-update-icon-cache -f -t /usr/share/icons/hicolor 2>/dev/null || true
-		for l in wgq wgq-fw wgq-mgmt; do
+		for l in wgq wgq-fw wgq-mgmt wgq-tpl; do
 			if qubesd-query --fail -e dom0 admin.label.Get dom0 "$l" >/dev/null 2>&1; then
 				qubesd-query --fail -e dom0 admin.label.Remove dom0 "$l" >/dev/null 2>&1 \
 					|| warn "label $l not removed; a qube still wears it"

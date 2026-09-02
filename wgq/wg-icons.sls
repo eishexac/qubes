@@ -12,6 +12,7 @@
         wgq       0xCC0000  red, like sys-net    -- the edge (VPN qubes)
         wgq-fw    0x73D216  green, like sys-firewall -- the filter
         wgq-mgmt  0xEDD400  yellow               -- the provisioning qube
+        wgq-tpl   0x000000  black, like stock templates -- the template
 
     The icon files land in /usr/share/icons -- the one base dir every
     GUI process searches unconditionally (dom0 sessions do not reliably
@@ -41,7 +42,12 @@ wgq-label-wgq-mgmt:
     - name: printf '0xEDD400' | qubesd-query --fail dom0 admin.label.Create dom0 wgq-mgmt
     - unless: qubesd-query --fail -e dom0 admin.label.Get dom0 wgq-mgmt
 
-{% for icon in ['servicevm-wgq.svg', 'servicevm-wgq-fw.svg', 'appvm-wgq-mgmt.svg'] %}
+wgq-label-wgq-tpl:
+  cmd.run:
+    - name: printf '0x000000' | qubesd-query --fail dom0 admin.label.Create dom0 wgq-tpl
+    - unless: qubesd-query --fail -e dom0 admin.label.Get dom0 wgq-tpl
+
+{% for icon in ['servicevm-wgq.svg', 'servicevm-wgq-fw.svg', 'appvm-wgq-mgmt.svg', 'templatevm-wgq-tpl.svg'] %}
 wgq-icon-{{ icon }}:
   file.managed:
     - name: /usr/share/icons/hicolor/scalable/apps/{{ icon }}
@@ -56,6 +62,6 @@ wgq-icon-cache:
   cmd.run:
     - name: gtk-update-icon-cache -f -t /usr/share/icons/hicolor || true
     - onchanges:
-{% for icon in ['servicevm-wgq.svg', 'servicevm-wgq-fw.svg', 'appvm-wgq-mgmt.svg'] %}
+{% for icon in ['servicevm-wgq.svg', 'servicevm-wgq-fw.svg', 'appvm-wgq-mgmt.svg', 'templatevm-wgq-tpl.svg'] %}
       - file: wgq-icon-{{ icon }}
 {% endfor %}

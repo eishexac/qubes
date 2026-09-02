@@ -369,14 +369,15 @@ never automatic — `qvm-start` the VPN qube, then `wgq firewall --zone
 for each zone it stops).
 
 **Identity.** wgq qubes wear their own Qubes labels — `wgq` (red, like
-sys-net: the edge), `wgq-fw` (green, like sys-firewall: the filter) and
-`wgq-mgmt` (yellow) — created as named custom labels via the Admin API,
-so no stock colour is claimed. Qubes resolves icons as
-`<class>-<label-name>`, which is what scopes the icons to wgq alone: the
-VPN qube's cube carries a recessed RJ45 socket, the firewall's a shield,
-wgq-mgmt's a terminal prompt, and no stock icon file is shadowed. The
-labels and icon files install with `wgq.wg-icons` (part of the apply
-plan; zones and mgmt include it too), the icons living in dom0's
+sys-net: the edge), `wgq-fw` (green, like sys-firewall: the filter),
+`wgq-mgmt` (yellow) and `wgq-tpl` (black, like stock templates) —
+created as named custom labels via the Admin API, so no stock colour is
+claimed. Qubes resolves icons as `<class>-<label-name>`, which is what
+scopes the icons to wgq alone: every wgq cube carries a shield and a
+recessed RJ45 socket (wgq-mgmt trades the shield for a terminal
+prompt), and no stock icon file is shadowed. The labels and icon files
+install with `wgq.wg-icons` (part of the apply plan; zones, mgmt and
+the template include it too), the icons living in dom0's
 `/usr/share/icons` as package-unowned files (the one path every GUI
 process searches; updates leave unowned files alone). The GUI
 picks them up at the latest on the next login.
