@@ -13,15 +13,20 @@
 #                                    pubkey status: as user)
 #     wgq <anything else> ...        runs `wgq ...` inside wgq-mgmt
 #
+# Always `sudo wgq ...`: the entrypoint is a symlink into /srv/salt,
+# which is root-only on Qubes -- a user shell cannot stat the target,
+# so PATH lookup reports the command as not found. Deliberate: the
+# approved tree stays root's, and every verb here is dom0 authority.
+#
 # The default zone is the reserved singleton 'wgq', so on a single-VPN
 # setup the whole lifecycle is dom0 one-liners:
 #
-#     wgq credential ivpn
-#     wgq keygen
-#     wgq pubkey | wgq provision --provider ivpn --zone wgq
-#     wgq sync
-#     wgq switch <peer>
-#     wgq firewall --zone wgq
+#     sudo wgq credential ivpn
+#     sudo wgq keygen
+#     sudo wgq pubkey | sudo wgq provision --provider ivpn --zone wgq
+#     sudo wgq sync
+#     sudo wgq switch <peer>
+#     sudo wgq firewall --zone wgq
 #
 # File arguments to proxied verbs cross into the target qube verbatim:
 # give `apply` a path that exists THERE, not a dom0 path (or just use

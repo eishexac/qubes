@@ -295,8 +295,13 @@ that runs is always the one the airlock approved:
 ```
 sudo wgq zone add <zone> [--upstream <netvm>] [--attach <qube>[,<qube>...]]...
 sudo wgq zone attach <zone> <qube>    sudo wgq zone detach <qube> [netvm]
-wgq zone list                         sudo wgq zone remove <zone>
+sudo wgq zone list                    sudo wgq zone remove <zone>
 ```
+
+(`sudo` is part of every dom0 `wgq` command, not just the destructive
+ones: the entrypoint is a symlink into `/srv/salt`, which Qubes keeps
+root-only, so a user shell cannot even see the target — deliberate,
+since the approved tree stays root's.)
 
 The same entrypoint reaches the other qubes without opening their
 terminals -- it frames a `qvm-run` you could type yourself, and prints
@@ -311,12 +316,12 @@ zone's VPN qube and applies it -- no qvm-copy dance. The whole
 lifecycle, from dom0:
 
 ```sh
-wgq credential ivpn
-wgq keygen
-wgq pubkey | wgq provision --provider ivpn --zone wgq
-wgq sync
-wgq switch <peer>
-wgq firewall --zone wgq
+sudo wgq credential ivpn
+sudo wgq keygen
+sudo wgq pubkey | sudo wgq provision --provider ivpn --zone wgq
+sudo wgq sync
+sudo wgq switch <peer>
+sudo wgq firewall --zone wgq
 ```
 
 The only qubes whose netvm ever changes are the ones you typed — there is
