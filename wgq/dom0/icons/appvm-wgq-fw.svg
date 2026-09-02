@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    wgq firewall qube (label wgq-fw) icon at its appvm- name. A wgq VPN/firewall qube is
+    class AppVM; the servicevm feature that renames its icon to the
+    servicevm- form is set one salt state AFTER the qube is created, so
+    for that instant the icon name is appvm-<label>. Without this file
+    the running menu resolves nothing there, caches a blank, and never
+    refreshes, costing a relogin per zone. Same art as servicevm-wgq-fw.svg: a
+    wgq qube looks like a wgq qube at every name it can wear.
+
+    Cube geometry derived from qubes-artwork's servicevm icons,
+    (c) Invisible Things Lab, CC BY-SA 4.0. This file: CC BY-SA 4.0.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="33" height="32" viewBox="0 0 33 32">
+  <path d="M30.0419 22.4525V9.54766C30.0419 8.5907 29.5291 7.70712 28.6982 7.23234L17.3648 0.756134C16.545 0.287671 15.5385 0.287673 14.7187 0.75614L3.38538 7.23233C2.55451 7.70711 2.04175 8.5907 2.04175 9.54765V22.4525C2.04175 23.4094 2.55452 24.293 3.38539 24.7678L14.7189 31.244C15.5387 31.7124 16.5451 31.7124 17.3649 31.2439L28.6982 24.7678C29.5291 24.293 30.0419 23.4094 30.0419 22.4525Z" fill="#22C55E"/>
+  <path d="M2.04175 22.4525C2.04175 23.4094 2.55451 24.293 3.38539 24.7678L14.7451 31.259C15.3229 31.5892 16.0417 31.172 16.0417 30.5065V17.5476C16.0417 16.5906 15.529 15.7071 14.6981 15.2323L3.3384 8.74106C2.76063 8.41091 2.04175 8.82809 2.04175 9.49354V22.4525Z" fill="#BBF7D0"/>
+  <path d="M 24 3 L 42 9.5 L 42 23 C 42 34 34.5 42 24 45.5 C 13.5 42 6 34 6 23 L 6 9.5 Z" transform="translate(5.16 13.9) skewY(30) scale(0.16)" fill="#166534"/>
+  <g transform="translate(16.28 17.77) skewY(-30) scale(0.28)">
+    <path d="M 10 13.5 L 38 13.5 L 38 29.5 L 32 29.5 L 32 34.5 L 16 34.5 L 16 29.5 L 10 29.5 Z" fill="#166534"/>
+    <path d="M 12 15.5 L 36 15.5 L 36 27.5 L 30.5 27.5 L 30.5 32.5 L 17.5 32.5 L 17.5 27.5 L 12 27.5 Z" fill="#0A0A0C"/>
+    <path d="M 12.8 21.5 L 35.2 21.5 L 35.2 27 L 12.8 27 Z" fill="#26221B"/>
+    <path d="M 13.9 16 h 1.25 v 5.5 h -1.25 Z M 16.45 16 h 1.25 v 5.5 h -1.25 Z M 19 16 h 1.25 v 5.5 h -1.25 Z M 21.55 16 h 1.25 v 5.5 h -1.25 Z M 24.1 16 h 1.25 v 5.5 h -1.25 Z M 26.65 16 h 1.25 v 5.5 h -1.25 Z M 29.2 16 h 1.25 v 5.5 h -1.25 Z M 31.75 16 h 1.25 v 5.5 h -1.25 Z" fill="#E4B54C"/>
+    <path d="M 13.9 20.3 h 1.25 v 1.2 h -1.25 Z M 16.45 20.3 h 1.25 v 1.2 h -1.25 Z M 19 20.3 h 1.25 v 1.2 h -1.25 Z M 21.55 20.3 h 1.25 v 1.2 h -1.25 Z M 24.1 20.3 h 1.25 v 1.2 h -1.25 Z M 26.65 20.3 h 1.25 v 1.2 h -1.25 Z M 29.2 20.3 h 1.25 v 1.2 h -1.25 Z M 31.75 20.3 h 1.25 v 1.2 h -1.25 Z" fill="#A97B23"/>
+    <path d="M 12 15.5 L 36 15.5 L 36 18.2 L 12 18.2 Z" fill="#000000" fill-opacity="0.5"/>
+    <path d="M 17.5 31.4 L 30.5 31.4 L 30.5 32.5 L 17.5 32.5 Z" fill="#FFFFFF" fill-opacity="0.25"/>
+  </g>
+</svg>

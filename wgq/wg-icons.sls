@@ -47,7 +47,7 @@ wgq-label-wgq-tpl:
     - name: printf '0x000000' | qubesd-query --fail dom0 admin.label.Create dom0 wgq-tpl
     - unless: qubesd-query --fail -e dom0 admin.label.Get dom0 wgq-tpl
 
-{% for icon in ['servicevm-wgq.svg', 'servicevm-wgq-fw.svg', 'appvm-wgq-mgmt.svg', 'templatevm-wgq-tpl.svg'] %}
+{% for icon in ['servicevm-wgq.svg', 'servicevm-wgq-fw.svg', 'appvm-wgq.svg', 'appvm-wgq-fw.svg', 'appvm-wgq-mgmt.svg', 'templatevm-wgq-tpl.svg'] %}
 wgq-icon-{{ icon }}:
   file.managed:
     - name: /usr/share/icons/hicolor/scalable/apps/{{ icon }}
@@ -62,6 +62,6 @@ wgq-icon-cache:
   cmd.run:
     - name: gtk-update-icon-cache -f -t /usr/share/icons/hicolor || true
     - onchanges:
-{% for icon in ['servicevm-wgq.svg', 'servicevm-wgq-fw.svg', 'appvm-wgq-mgmt.svg', 'templatevm-wgq-tpl.svg'] %}
+{% for icon in ['servicevm-wgq.svg', 'servicevm-wgq-fw.svg', 'appvm-wgq.svg', 'appvm-wgq-fw.svg', 'appvm-wgq-mgmt.svg', 'templatevm-wgq-tpl.svg'] %}
       - file: wgq-icon-{{ icon }}
 {% endfor %}

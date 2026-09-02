@@ -378,15 +378,22 @@ for each zone it stops).
 sys-net: the edge), `wgq-fw` (green, like sys-firewall: the filter),
 `wgq-mgmt` (yellow) and `wgq-tpl` (black, like stock templates) —
 created as named custom labels via the Admin API, so no stock colour is
-claimed. Qubes resolves icons as `<class>-<label-name>`, which is what
-scopes the icons to wgq alone: every wgq cube carries a shield and a
-recessed RJ45 socket (wgq-mgmt trades the shield for a terminal
-prompt), and no stock icon file is shadowed. The labels and icon files
-install with `wgq.wg-icons` (part of the apply plan; zones, mgmt and
-the template include it too), the icons living in dom0's
-`/usr/share/icons` as package-unowned files (the one path every GUI
-process searches; updates leave unowned files alone). The GUI
-picks them up at the latest on the next login.
+claimed. Qubes computes an icon name as `servicevm-<label>` for a
+netvm-style qube and `<class>-<label>` otherwise, which is what scopes
+the icons to wgq alone: every wgq cube carries a shield and a recessed
+RJ45 socket (wgq-mgmt trades the shield for a terminal prompt), and no
+stock icon file is shadowed. A VPN or firewall qube is created as a
+plain AppVM and only gains its `servicevm` mark a moment later, so it
+briefly wears the `appvm-<label>` name; the icon set ships that name
+too (same art), so the qube shows its cube from birth and a running
+menu never caches a blank — otherwise each new zone would cost a
+relogin. The labels and icon files install with `wgq.wg-icons` (first
+in the apply plan; zones, mgmt and the template include it too), the
+icons living in dom0's `/usr/share/icons` as package-unowned files (the
+one path every GUI process searches; updates leave unowned files
+alone). A menu already running when a qube's label *changes* keeps its
+stale icon cache until the next login — the once-per-install template
+relabel is the one place that still shows.
 
 Two policy files make the identity permanent rather than merely
 default. `30-wgq-labels.policy` denies every VM the wgq label names
