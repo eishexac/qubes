@@ -1,0 +1,31 @@
+# wgq: only dom0 makes and dresses qubes.
+#
+# Everything below restates the Admin API's own default: no VM may
+# create a qube, clone one, or change which label a qube wears. What
+# this file adds is permanence, the same way 30-wgq-labels.policy pins
+# the label namespace: sorted at 30, these denies keep matching first
+# even if a management qube is someday granted broad admin.* powers by
+# a later-sorted allow.
+#
+# A qube's NAME cannot be pinned by policy at all: it travels in the
+# call's payload, and policy sees only service, argument, source and
+# destination. That is fine -- a name is a string, while the label is
+# the identity Qubes actually draws (border colour, icon), and with
+# this file both minting qubes and dressing them stay dom0's alone,
+# permanently. dom0 itself is not subject to policy, which is the
+# point.
+#
+# admin.vm.CreateDisposable is deliberately absent: its qubes are
+# auto-named disp#### and inherit their template's label, so it can
+# impersonate nothing -- and denying it could break disposable flows.
+admin.vm.Create.AppVM * * @adminvm deny notify=yes
+admin.vm.Create.DispVM * * @adminvm deny notify=yes
+admin.vm.Create.StandaloneVM * * @adminvm deny notify=yes
+admin.vm.Create.TemplateVM * * @adminvm deny notify=yes
+admin.vm.CreateInPool.AppVM * * @adminvm deny notify=yes
+admin.vm.CreateInPool.DispVM * * @adminvm deny notify=yes
+admin.vm.CreateInPool.StandaloneVM * * @adminvm deny notify=yes
+admin.vm.CreateInPool.TemplateVM * * @adminvm deny notify=yes
+admin.vm.Clone * * * deny notify=yes
+admin.vm.property.Set +label * * deny notify=yes
+admin.vm.property.Reset +label * * deny notify=yes

@@ -10,9 +10,10 @@ salt wgq.wg-template
 # The same state applied INSIDE the template: packages and files.
 salt-target debian-13-wgq wgq.wg-template
 # Identity: creates the wgq custom labels (red edge / green filter /
-# yellow mgmt, named so the icons scope to wgq alone) and installs the
-# icon files into dom0's /usr/local. wg-mgmt and every zone include this
-# state too, so skipping only defers it.
+# yellow mgmt / black template, named so the icons scope to wgq alone)
+# and installs the icon files into dom0's /usr/share/icons. wg-mgmt,
+# every zone and the template include this state too, so skipping only
+# defers it.
 salt wgq.wg-icons
 # The dom0 entrypoint: symlinks /usr/local/bin/wgq into the reviewed
 # tree, so `sudo wgq zone add <zone>` works instead of the /srv/salt
@@ -22,6 +23,11 @@ salt wgq.wg-cli
 # for admin.label.Create/Remove on wgq's own label names, so a later
 # broad admin grant to some management qube can never rewrite them.
 policy 30-wgq-labels.policy
+# Only dom0 makes and dresses qubes: restates the Admin API's deny
+# default for qube creation, cloning and label changes, so it survives
+# any later broad allow. Removable if a management qube must someday
+# create qubes -- but that day should be a decision, not an accident.
+policy 30-wgq-creation.policy
 # Create wgq-mgmt, the provisioning qube. Zones are NOT created here:
 # they are user lifecycle, one deliberate command each --
 #     sudo wgq zone add <zone>
