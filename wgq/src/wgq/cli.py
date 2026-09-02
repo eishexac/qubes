@@ -140,8 +140,8 @@ def read_credential(path: Path) -> str:
     except FileNotFoundError:
         raise UsageError(
             f"no credential file at {path}.\n"
-            f"Create it with:\n"
-            f"    install -m 600 /dev/null {path}\n"
+            f"Create it with (the directory is root's; the file must be yours):\n"
+            f"    sudo install -m 600 -o user -g user /dev/null {path}\n"
             f"    printf '%s\\n' <account-number> > {path}"
         ) from None
     if not path.is_file():

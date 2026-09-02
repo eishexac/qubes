@@ -187,10 +187,16 @@ case "$verb" in
 		stty echo 2>/dev/null || true
 		printf '\n'
 		[ -n "$acct" ] || die "empty account id; nothing written"
-		note "-> qvm-run -u user $MGMT 'umask 077 && cat > /rw/config/$provider-account'"
-		printf '%s\n' "$acct" | qvm-run --no-gui --pass-io -u user -- "$MGMT" \
-			"umask 077 && cat > /rw/config/$provider-account"
-		ok "credential stored in $MGMT:/rw/config/$provider-account (mode 600)"
+		# Written as root: /rw/config is root-owned inside every qube,
+		# and dom0's qrexec runs as root by dom0's own authority -- no
+		# in-qube sudo involved, so this works even on a mgmt qube with
+		# passwordless root removed. Then handed to user, who is what
+		# the management verbs run as and what the CLI's mode-600 check
+		# expects to own the file.
+		note "-> qvm-run -u root $MGMT 'umask 077 && cat > /rw/config/$provider-account && chown user:user ...'"
+		printf '%s\n' "$acct" | qvm-run --no-gui --pass-io -u root -- "$MGMT" \
+			"umask 077 && cat > /rw/config/$provider-account && chown user:user /rw/config/$provider-account"
+		ok "credential stored in $MGMT:/rw/config/$provider-account (mode 600, owner user)"
 		exit 0 ;;
 	sync)
 		# The qvm-copy dance, framed: stream the bundle out of wgq-mgmt
