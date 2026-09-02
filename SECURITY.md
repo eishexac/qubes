@@ -46,11 +46,10 @@ channels are independent on purpose:
 curl -sS https://existin.space/keys/openpgp/eishexac.asc | gpg --import
 # or via WKD
 gpg --locate-keys hexac@existin.space
-# or the copy in this repository (weakest alone; cross-check it)
-gpg --import KEY.asc
+# or GitHub's copy of the account's key (independent infrastructure)
+curl -sS https://github.com/eishexac.gpg | gpg --import
 
-gpg --fingerprint hexac@existin.space   # must match the block above, and
-                                        # the key on github.com/eishexac
+gpg --fingerprint hexac@existin.space   # must match across all channels
 ```
 
 Then:
