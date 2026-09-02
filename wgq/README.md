@@ -231,7 +231,8 @@ sudo wgq keygen                 # prints the public key; never regenerates silen
 **In `wgq-mgmt`:**
 
 ```sh
-install -m 600 /dev/null /rw/config/mullvad-account
+# /rw/config is root's; the file must be user's (the CLI runs as user)
+sudo install -m 600 -o user -g user /dev/null /rw/config/mullvad-account
 printf '%s\n' <16-digit account> > /rw/config/mullvad-account
 
 wgq servers --provider mullvad --filter se
