@@ -141,7 +141,7 @@ run_in() {
 	for r_arg in "$@"; do
 		r_cmd="$r_cmd $(quote "$r_arg")"
 	done
-	note "-> qvm-run -u $r_user $r_qube $r_cmd"
+	trace "-> qvm-run -u $r_user $r_qube $r_cmd"
 	exec qvm-run --no-gui --pass-io -u "$r_user" -- "$r_qube" "$r_cmd"
 }
 
@@ -193,7 +193,7 @@ case "$verb" in
 		# passwordless root removed. Then handed to user, who is what
 		# the management verbs run as and what the CLI's mode-600 check
 		# expects to own the file.
-		note "-> qvm-run -u root $MGMT 'umask 077 && cat > /rw/config/$provider-account && chown user:user ...'"
+		trace "-> qvm-run -u root $MGMT 'umask 077 && cat > /rw/config/$provider-account && chown user:user ...'"
 		printf '%s\n' "$acct" | qvm-run --no-gui --pass-io -u root -- "$MGMT" \
 			"umask 077 && cat > /rw/config/$provider-account && chown user:user /rw/config/$provider-account"
 		ok "credential stored in $MGMT:/rw/config/$provider-account (mode 600, owner user)"
@@ -205,8 +205,8 @@ case "$verb" in
 		[ $# -eq 1 ] || usage
 		check_zone "$zone"
 		s_vpn=$(vpn_name "$zone")
-		note "-> qvm-run -u user $MGMT 'tar -C ~/.local/share/wgq/zones/$zone -cf - peers'"
-		note "   | qvm-run -u root $s_vpn 'tar -xf - && wgq apply peers'"
+		trace "-> qvm-run -u user $MGMT 'tar -C ~/.local/share/wgq/zones/$zone -cf - peers'"
+		trace "   | qvm-run -u root $s_vpn 'tar -xf - && wgq apply peers'"
 		qvm-run --no-gui --pass-io -u user -- "$MGMT" \
 			"tar -C /home/user/.local/share/wgq/zones/$zone -cf - peers" \
 		| qvm-run --no-gui --pass-io -u root -- "$s_vpn" \
