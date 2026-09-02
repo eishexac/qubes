@@ -218,6 +218,17 @@ With it, the same rules are applied by `admin.vm.firewall.Set` — one atomic
 call, no rule numbers to miscount — and the default `ask` action raises a
 dom0 confirmation each time. Read the file; it explains the trade.
 
+**Icons blank after installing? Log out and back in, once.** The install
+drops the wgq icons into a GUI session that is already running, and a
+running menu does not rescan the icon theme — so the wgq qubes show blank
+until the next login. This is a one-time step: after that login every zone
+you create shows its cube immediately (the icon set covers both names a
+zone qube passes through as it gains its service mark, so nothing blanks at
+creation). If icons are *still* blank after a relogin, the files did not
+land — re-apply just the identity with `sudo qubesctl state.apply
+wgq.wg-icons` and check `/usr/share/icons/hicolor/scalable/apps/` for the
+six `*-wgq*.svg` files.
+
 ---
 
 ## Use
