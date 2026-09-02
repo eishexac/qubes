@@ -103,8 +103,11 @@ else
 fi
 
 # 8. credential pipes the typed secret into the provider file in mgmt.
+# The write is dom0's root (qrexec authority, not in-qube sudo) because
+# /rw/config is root-owned; the chown hands the 600 file to user, who
+# is what the management verbs run as.
 if printf 'acct123\n' | wgq credential ivpn >"$WORK/out" 2>&1 \
-	&& grep -q -- '-u user -- wgq-mgmt umask 077 && cat > /rw/config/ivpn-account' "$QLOG"; then
+	&& grep -q -- '-u root -- wgq-mgmt umask 077 && cat > /rw/config/ivpn-account && chown user:user /rw/config/ivpn-account' "$QLOG"; then
 	ok "credential frames the account file into wgq-mgmt"
 else
 	cat "$WORK/out" "$QLOG" 2>/dev/null; fail "credential went wrong"
