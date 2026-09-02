@@ -159,6 +159,20 @@ else
 	cat "$WORK/out" "$QLOG" 2>/dev/null; fail "bare panic went wrong"
 fi
 
+# Framing rides stderr, never stdout. `wgq pubkey | wgq provision` choked
+# when the "-> qvm-run" line landed on stdout and was read as the key; the
+# dispatcher must add nothing to stdout so a proxied verb's output pipes
+# clean. (The fake qvm-run emits nothing on stdout, so a clean run leaves
+# stdout empty and the framing on stderr.)
+: > "$QLOG"
+env PATH="$WORK/bin:$PATH" sh "$WGQ" -z work pubkey >"$WORK/o" 2>"$WORK/e"
+if [ ! -s "$WORK/o" ] && grep -q -- '-> qvm-run' "$WORK/e"; then
+	ok "framing rides stderr, leaving stdout clean for a pipe"
+else
+	printf 'stdout:\n'; cat "$WORK/o"; printf 'stderr:\n'; cat "$WORK/e"
+	fail "framing leaked onto stdout -- a piped key would be corrupted"
+fi
+
 if [ "$failures" -gt 0 ]; then
 	printf '%s failure(s)\n' "$failures"
 	exit 1
