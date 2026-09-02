@@ -53,7 +53,23 @@ wgq-template-clone:
     - name: |
         set -e
         qvm-clone {{ base }} {{ tpl }}
-        qvm-tags {{ tpl }} add created-by-wgq
+        # Seen on hardware: qubesd answers a call landing right after a
+        # clone with "got empty response". A clone that leaves this
+        # state untagged is a trap -- the re-run skips the clone (it
+        # exists) and the guard below cannot tell it from a stranger's
+        # -- so the stamp retries the transient before giving up, and
+        # the give-up message hands over the exact recovery command.
+        i=0
+        until qvm-tags {{ tpl }} add created-by-wgq; do
+            i=$((i + 1))
+            if [ "$i" -ge 5 ]; then
+                echo "wgq: cloned {{ tpl }} but could not tag it (qubesd" >&2
+                echo "unresponsive; journalctl -u qubesd). Adopt it and" >&2
+                echo "re-run:  qvm-tags {{ tpl }} add created-by-wgq" >&2
+                exit 1
+            fi
+            sleep 3
+        done
     - unless: qvm-check --quiet {{ tpl }}
     - require:
       - cmd: wgq-base-template-present
