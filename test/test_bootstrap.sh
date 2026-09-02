@@ -15,8 +15,8 @@ ok()   { printf 'ok:   %s\n' "$*"; }
 fail() { printf 'FAIL: %s\n' "$*"; failures=$((failures + 1)); }
 
 if (cd "$ROOT" && sh bootstrap.sh wgq) >"$out" 2>&1; then
-	if grep -q 'qubes-ingest pull' "$out" \
-		&& grep -q 'qubes-ingest apply wgq' "$out" \
+	if grep -q 'airlock pull' "$out" \
+		&& grep -q 'airlock apply wgq' "$out" \
 		&& grep -q 'dist/wgq' "$out"; then
 		ok "bootstrap builds, verifies, and prints the dom0 steps"
 	else

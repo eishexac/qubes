@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# ingest - the airlock into dom0 for qubes projects.
+# airlock - the controlled entry into dom0 for the collection.
 #
 # dom0 has no network, on purpose, and Qubes ships no mechanism for
 # downloading into it; the supported pattern is dom0 *pulling* bytes out
@@ -45,26 +45,26 @@
 # The copy lands in /tmp, which evaporates on reboot: the installed file
 # in /usr/local/bin is the only one that persists.
 #
-#     qvm-run --pass-io <qube> 'cat /path/to/qubes/dom0/ingest' > /tmp/qubes-ingest
-#     less /tmp/qubes-ingest           # read all of it; it is not long
-#     sudo install -m 0755 /tmp/qubes-ingest /usr/local/bin/qubes-ingest
+#     qvm-run --pass-io <qube> 'cat /path/to/qubes/dom0/airlock' > /tmp/airlock
+#     less /tmp/airlock           # read all of it; it is not long
+#     sudo install -m 0755 /tmp/airlock /usr/local/bin/airlock
 #
 # (dom0's /usr/local is ordinary storage; the template-overlay caveat that
 # applies inside qubes does not apply here.) Updating the script itself
-# goes through its own airlock afterwards: `qubes-ingest pull <qube> dom0`
+# goes through its own airlock afterwards: `airlock pull <qube> dom0`
 # shows you the diff of this file like any other tree, and after approval
 # it tells you the one install command to run.
 #
 # Usage:
-#     qubes-ingest pull <qube> <project> [path-in-qube]   (default: qubes)
-#     qubes-ingest apply <project>
-#     qubes-ingest status
+#     airlock pull <qube> <project> [path-in-qube]   (default: qubes)
+#     airlock apply <project>
+#     airlock status
 #
 # Exit: 0 done or already current, 1 refused/failed, 2 usage.
 
 set -u
 
-SALT_ROOT="${QUBES_INGEST_SALT_ROOT:-/srv/salt}"
+SALT_ROOT="${AIRLOCK_SALT_ROOT:-/srv/salt}"
 RECEIPTS="$SALT_ROOT/.ingest-receipts"
 PAGER="${PAGER:-less}"
 # A hostile qube could stream forever; a truncated tar fails to extract,
@@ -72,10 +72,10 @@ PAGER="${PAGER:-less}"
 MAX_BYTES=104857600
 PROG=${0##*/}
 # Overridable only so the apply flow can be tested outside dom0.
-QUBESCTL="${QUBES_INGEST_QUBESCTL:-qubesctl}"
-POLICY_DIR="${QUBES_INGEST_POLICY_DIR:-/etc/qubes/policy.d}"
-QVM_TEMPLATE="${QUBES_INGEST_QVM_TEMPLATE:-qvm-template}"
-QVM_CHECK="${QUBES_INGEST_QVM_CHECK:-qvm-check}"
+QUBESCTL="${AIRLOCK_QUBESCTL:-qubesctl}"
+POLICY_DIR="${AIRLOCK_POLICY_DIR:-/etc/qubes/policy.d}"
+QVM_TEMPLATE="${AIRLOCK_QVM_TEMPLATE:-qvm-template}"
+QVM_CHECK="${AIRLOCK_QVM_CHECK:-qvm-check}"
 
 if command -v sha256sum >/dev/null 2>&1; then
 	SHA=sha256sum
@@ -125,8 +125,8 @@ check_name() {
 # qube; the default is the mechanism Qubes itself documents for moving
 # bytes into dom0.
 fetch() {
-	if [ -n "${QUBES_INGEST_TRANSPORT:-}" ]; then
-		"$QUBES_INGEST_TRANSPORT" "$1" "$2" "$3"
+	if [ -n "${AIRLOCK_TRANSPORT:-}" ]; then
+		"$AIRLOCK_TRANSPORT" "$1" "$2" "$3"
 	else
 		qvm-run --no-gui --pass-io -- "$1" "tar -C $2 -cf - $3"
 	fi

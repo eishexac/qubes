@@ -3,7 +3,7 @@
 Qubes OS Salt formulas and tooling, built to be read before they enter dom0.
 
 Every project in this repository is a self-contained directory. You adopt
-one project, or several, or just the ingest tool — never the whole
+one project, or several, or just the airlock — never the whole
 repository as a unit. Nothing here asks you to trust a maintainer's key or
 a package server: the trust anchors stay Debian and the Qubes OS project,
 and the security control for everything that crosses into dom0 is that
@@ -63,12 +63,12 @@ cd ~/qubes && sh bootstrap.sh          # or: sh bootstrap.sh <project>
 
 It checks dependencies, runs the project's tests, proves the build
 reproduces, and prints the exact dom0 commands — with the disposable's
-real name and path filled in — to bootstrap the ingest tool (first time
+real name and path filled in — to bootstrap the airlock (first time
 only), pull, and apply. Close the DispVM afterwards; nothing about the
 fetch or build persists. The dom0 lines stay typed by hand and reviewed:
 that is the security model, not friction left in by accident.
 
-**The ingest tool** (`dom0/ingest`) is the airlock those commands go
+**The airlock** (`dom0/airlock`) is the airlock those commands go
 through: `pull` stages the subtree, scans it (plain files, portable names,
 no undeclared binaries), and **diffs it against what is currently
 installed** before anything reaches `/srv/salt` — updates are as auditable
@@ -92,7 +92,7 @@ Then read every file it landed and follow that project's README by hand.
 ```
 qubes/
 ├── bootstrap.sh         qube side: clone → checks → printed dom0 steps
-├── dom0/ingest          the airlock: pull, scan, diff, approve, apply
+├── dom0/airlock          the airlock: pull, scan, diff, approve, apply
 ├── tools/               shared build helpers (deterministic zipapp)
 ├── test/                tests for the shared tooling
 ├── wgq/                 project: WireGuard proxy qubes

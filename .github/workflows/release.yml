@@ -91,7 +91,7 @@ jobs:
             echo "no build artifacts; releasing tag + notes only"
           fi
           # $assets stays unquoted so the dist glob expands; project names
-          # and artifact files never contain spaces (ingest enforces the
+          # and artifact files never contain spaces (the airlock enforces the
           # same character set).
           gh release create "$GITHUB_REF_NAME" \
             --draft \

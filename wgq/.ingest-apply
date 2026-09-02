@@ -1,4 +1,4 @@
-# wgq install plan, run step by step by `qubes-ingest apply wgq`.
+# wgq install plan, run step by step by `airlock apply wgq`.
 # Verbs are interpreted by the ingest script; nothing here is shell.
 # Base template first: skipped automatically when already installed;
 # otherwise qvm-template pulls the OFFICIAL debian-13-minimal, verified
