@@ -58,7 +58,7 @@ DispVM, then:
 
 ```sh
 git clone https://github.com/eishexac/qubes.git ~/qubes
-cd ~/qubes && sh bootstrap.sh          # or: sh bootstrap.sh <project>
+cd ~/qubes && sh bootstrap.sh <project>...        # one or more, e.g. wgq
 ```
 
 It checks dependencies, runs the project's tests, proves the build
