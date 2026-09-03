@@ -155,6 +155,19 @@ check_public_ip() {
 	fi
 }
 
+# dig prints its failure notices -- ';; communications error to ...' and
+# ';; no servers could be reached' -- to STDOUT, not stderr. So "dig wrote
+# something" is NOT "dig got an answer", and a checker that greps raw dig
+# output convicts a perfectly sealed tunnel of leaking DNS: the kill test
+# here did exactly that on hardware, and three firewall fixes chased a
+# leak that was this function's absence. Answers never start with ';;',
+# so this emits answer lines only; callers test its output for
+# non-emptiness and nothing else.
+dig_answers() {
+	timeout "$NET_TIMEOUT" dig +time=3 +tries=1 +short "$@" 2>/dev/null \
+		| grep -v '^;;' || :
+}
+
 # --------------------------------------------------------------------------
 # Check 2 - DNS is pinned to the in-tunnel resolver.
 #
@@ -170,13 +183,13 @@ check_dns() {
 		return
 	fi
 
-	ordinary=$(timeout "$NET_TIMEOUT" dig +time=3 +tries=1 +short example.com A 2>/dev/null)
+	ordinary=$(dig_answers example.com A)
 	if [ -z "$ordinary" ]; then
 		fail 2 "ordinary DNS resolution returned nothing"
 		return
 	fi
 
-	intercepted=$(timeout "$NET_TIMEOUT" dig +time=3 +tries=1 +short @192.0.2.1 example.com A 2>/dev/null)
+	intercepted=$(dig_answers @192.0.2.1 example.com A)
 	if [ -z "$intercepted" ]; then
 		fail 2 "a query to 192.0.2.1 went unanswered: DNS is NOT being intercepted, so a client that sets its own resolver bypasses $DNS"
 		return
@@ -184,7 +197,7 @@ check_dns() {
 	pass 2 "queries to arbitrary resolvers are intercepted (192.0.2.1 answered)"
 
 	if [ -n "$CLEARNET_IP" ]; then
-		egress=$(timeout "$NET_TIMEOUT" dig +time=3 +tries=1 +short whoami.akamai.net 2>/dev/null)
+		egress=$(dig_answers whoami.akamai.net)
 		if [ "$egress" = "$CLEARNET_IP" ]; then
 			fail 2 "the resolver egresses from $egress, your clearnet address"
 			return
@@ -211,7 +224,7 @@ check_killswitch() {
 	if curl -fsS -o /dev/null --max-time "$NET_TIMEOUT" https://8.8.8.8/ 2>/dev/null; then
 		leaked="$leaked https/8.8.8.8"
 	fi
-	if timeout "$NET_TIMEOUT" dig +time=3 +tries=1 +short example.com A 2>/dev/null | grep -q .; then
+	if [ -n "$(dig_answers example.com A)" ]; then
 		leaked="$leaked dns"
 	fi
 	if timeout "$NET_TIMEOUT" ping -n -c 2 -W 3 1.1.1.1 >/dev/null 2>&1; then
