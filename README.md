@@ -114,7 +114,7 @@ them.
 Per project: tags are `<project>-vX.Y.Z`, signed by the maintainer's key —
 fingerprint and the full verification ritual in
 [SECURITY.md](SECURITY.md), key served from
-[existin.space](https://existin.space/keys/openpgp/eishexac.asc) and by WKD. A
+[existin.space](https://existin.space/openpgp/eishexac.asc) and by WKD. A
 release never fires for a project whose code did not change, and attached
 artifacts are deterministic-build conveniences: verify the tag, rebuild,
 compare — do not trust downloads.
