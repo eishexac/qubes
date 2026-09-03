@@ -69,11 +69,27 @@ include:
       - qvm: {{ mgmt }}-present
       - cmd: {{ mgmt }}-owned
 
+# Same diet as the zone qubes (see wg-zone.sls for the hardware numbers):
+# a provisioning CLI that is idle between runs needs 400 static MB, not a
+# 4 GB balloon ceiling -- qmemman's re-trading ran this qube's xen-balloon
+# worker at 90% CPU on the machine that surfaced it.
 {{ mgmt }}-prefs:
   qvm.prefs:
     - name: {{ mgmt }}
     - netvm: {{ upstream }}
+    - memory: 400
+    - maxmem: 0
+    - vcpus: 1
     - autostart: False
+    - require:
+      - qvm: {{ mgmt }}-present
+      - cmd: {{ mgmt }}-owned
+
+{{ mgmt }}-no-balloon:
+  qvm.service:
+    - name: {{ mgmt }}
+    - disable:
+      - meminfo-writer
     - require:
       - qvm: {{ mgmt }}-present
       - cmd: {{ mgmt }}-owned

@@ -75,16 +75,37 @@ wgq-vpn-{{ zone }}-owned:
     - require:
       - qvm: wgq-vpn-{{ zone }}-present
 
+# Static memory, one vcpu -- the stock sys-net pattern, and measured on
+# hardware: with the AppVM defaults (400 initial, maxmem 4000, ballooning)
+# every wgq qube swelled to 2.8-3.8 GB, and qmemman's constant re-trading
+# ran the guests' xen-balloon worker at up to 90% CPU. A kernel WireGuard
+# forwarder needs neither the RAM nor a seat at the memory market:
+# maxmem 0 disables ballooning entirely, so the qube holds exactly its
+# 400 MB and the balloon worker never runs.
 wgq-vpn-{{ zone }}-prefs:
   qvm.prefs:
     - name: {{ vpnq }}
     - netvm: {{ upstream }}
     - provides_network: True
+    - memory: 400
+    - maxmem: 0
+    - vcpus: 1
     # Left off deliberately. A half-configured VPN qube coming up at every
     # boot while you are still iterating is worse than starting it by hand.
     # wgq-zone starts the fresh qubes once after creating them (a halted
     # netvm cannot accept clients); every boot after that is your call.
     - autostart: False
+    - require:
+      - qvm: wgq-vpn-{{ zone }}-present
+      - cmd: wgq-vpn-{{ zone }}-owned
+
+# Belt and suspenders with maxmem 0: stock sys-net disables the reporter
+# too, so the qube does not even file memory reports for qmemman to act on.
+wgq-vpn-{{ zone }}-no-balloon:
+  qvm.service:
+    - name: {{ vpnq }}
+    - disable:
+      - meminfo-writer
     - require:
       - qvm: wgq-vpn-{{ zone }}-present
       - cmd: wgq-vpn-{{ zone }}-owned
@@ -176,15 +197,29 @@ sys-fw-{{ zone }}-label:
       - qvm: sys-fw-{{ zone }}-present
       - cmd: sys-fw-{{ zone }}-owned
 
+# Same diet as the VPN qube above: a pure forwarder, static 400, no
+# balloon seat, one vcpu (qubes-mirage-firewall forwards on one).
 sys-fw-{{ zone }}-prefs:
   qvm.prefs:
     - name: sys-fw-{{ zone }}
     - netvm: {{ vpnq }}
     - provides_network: True
+    - memory: 400
+    - maxmem: 0
+    - vcpus: 1
     - autostart: False
     - require:
       - qvm: sys-fw-{{ zone }}-present
       - qvm: wgq-vpn-{{ zone }}-prefs
+      - cmd: sys-fw-{{ zone }}-owned
+
+sys-fw-{{ zone }}-no-balloon:
+  qvm.service:
+    - name: sys-fw-{{ zone }}
+    - disable:
+      - meminfo-writer
+    - require:
+      - qvm: sys-fw-{{ zone }}-present
       - cmd: sys-fw-{{ zone }}-owned
 
 {% endif %}
