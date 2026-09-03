@@ -699,17 +699,36 @@ def cmd_status(args: argparse.Namespace) -> int:
 # -- argument parsing -------------------------------------------------------
 
 
+class _CommandFirstHelp(argparse.HelpFormatter):
+    """Help that reads like an ordinary CLI: the command list carries no
+    redundant '<command>' metavar header line above it."""
+
+    def _format_action(self, action):
+        text = super()._format_action(action)
+        if action.nargs == argparse.PARSER:
+            # Drop the leading metavar line; keep the indented command list.
+            text = "\n".join(text.split("\n")[1:])
+        return text
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="wgq",
+        usage="wgq <command> [options]",
         description="Leak-tight WireGuard proxy qubes for Qubes OS.",
         epilog=(
             "Provisioning commands run in wgq-mgmt; keygen/apply/switch/status "
             "run in sys-wgq-<zone>. Nothing runs in dom0."
         ),
+        formatter_class=_CommandFirstHelp,
     )
+    parser._optionals.title = "Options"
     parser.add_argument("--version", action="version", version=f"wgq {__version__}")
-    sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
+    sub = parser.add_subparsers(
+        dest="command", required=True, metavar="<command>", title="Commands"
+    )
+    # Commands before Options in --help: command-first, like an ordinary CLI.
+    parser._action_groups.append(parser._action_groups.pop(1))
 
     def provider_opts(p: argparse.ArgumentParser) -> None:
         p.add_argument(
