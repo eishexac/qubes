@@ -20,42 +20,59 @@ constrains.
 
 ## Status
 
-**Last tested against: nothing.**
+**Last tested against: Qubes OS 4.3 on hardware, 2026-09-04 — a full
+end-to-end run.** Target: `debian-13-minimal` (Debian 13 "trixie").
 
-Target: Qubes OS 4.3, `debian-13-minimal` (Debian 13 "trixie").
+The run, on a live machine with a live IVPN account: install through the
+airlock → zone created → `credential` → `keygen` → `provision` (key
+registered, peers written) → `sync` → `switch` (handshake) → `firewall`
+(the `admin.vm.firewall.Set` grant exercised, `ask` prompt observed) →
+client attached → `test/verify.sh` from the client:
 
-Everything here was written against upstream source rather than from
-recollection — `qubes-core-agent-linux`, `qubes-core-admin`,
-`wireguard-tools`, `mullvadvpn-app` — and `DESIGN.md` cites the file
-and line behind every decision. That is worth something, and it is not the
-same as having run it. Reading source tells you what the code says; only
-running it tells you what the system does.
+- Check 1 (exit address differs from clearnet): **PASS**
+- Check 2 (DNS pinned; queries to arbitrary resolvers intercepted): **PASS**
+- Check 3 (kill test — nothing escapes with the tunnel down): **PASS**,
+  three consecutive runs
+- Check 4 (upstream pcap audit): optional, not run
 
-Two things need a live 4.3 machine before anyone relies on them:
+The kill test earned its keep twice over. It caught a real leak — an
+nftables flowtable fast path that bypassed the kill switch for offloaded
+DNS flows, sealed by installing the rules atomically and removing the
+fast path from VPN qubes — and then it caught its own detector treating
+dig's stdout error notices as answers. Both fixes are in this tree; the
+hunt is written into the commit history.
 
-1. **The `qvm-firewall` block.** `qvm-firewall reset` installs a single
-   `action=accept` rule, per `qubesadmin/tools/qvm_firewall.py`. The emitted
-   sequence follows from that. Nobody has watched it run.
-2. **The `admin.vm.firewall.Set` grant.** The policy syntax and the `ask`
-   prompt behaviour are read from Qubes' own policy headers, not observed.
+Also verified on the same machine: **Tor over VPN** — pointing
+`sys-whonix` at the zone's firewall qube gives
+`anon-whonix → sys-whonix → sys-fw-<zone> → sys-wgq-<zone> → tunnel`,
+so the ISP sees only WireGuard, never a Tor handshake. The kill switch
+composes: tunnel down means Whonix goes dark rather than bootstrapping
+Tor over clearnet.
 
-The IVPN backend's request and response shapes have been verified against
-their open-source client's source (`ivpn/desktop-app`), but it has still
-never been exercised against a live account, and says so in the module
-docstring. Note that IVPN registration is session-based and not idempotent:
-each provisioning run consumes one of the account's session slots (2 on
-Standard, 7 on Pro) until the API refuses with its session-limit status.
+Still unobserved: a server retirement, a dom0 update over an installed
+zone, and the Mullvad backend against a live account (the IVPN backend
+is now exercised; Mullvad remains source-verified only). Note that IVPN
+registration is session-based and not idempotent: each provisioning run
+consumes one of the account's session slots (2 on Standard, 7 on Pro)
+until the API refuses with its session-limit status.
 
-### What would make this ready
+### Next
 
-- [ ] The two items above confirmed on hardware, with real output pasted here
-- [ ] One zone provisioned end to end
-- [ ] `test/verify.sh` passing all four checks, including the kill test
-- [ ] Survived one server retirement and one dom0 update
+Direction settled, not yet built:
 
-Until those are ticked, treat this as a design under review rather than a
-tool. Issues and corrections are welcome — that is the point of it being
-here.
+- **Named zones only.** The reserved default zone `wgq` (bare `sys-wgq`
+  + `sys-fw-wgq`) will be retired: every zone gets a chosen name, no
+  hidden default to reach for. Explicitness won every argument it was
+  in during the hardware runs; the singleton is the last implicit thing
+  left.
+- **An interactive server picker.** `provision`/`switch` today take
+  `--filter`/`--server`/`--count`; the plan is a drill-down menu —
+  country, city, server — over the fetched list, stdlib only.
+- **Multiple accounts.** One credential per provider today; the shape
+  for several (per-zone accounts? named credentials?) is open.
+- **Architecture diagrams.** DESIGN.md cites source line by line but
+  draws nothing; the zone topology, the packet path through the chains,
+  and the kill-switch story deserve figures.
 
 ---
 
