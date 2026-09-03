@@ -109,10 +109,23 @@ cmd_down() {
 	configured || return 0
 	if is_up; then
 		wg-quick down "$LINK"
-		flush_conntrack
 	else
 		info "$TUN is not up"
 	fi
+	# Re-seal UNCONDITIONALLY, even when wg0 was already gone. A leak-tight
+	# qube must never let a flow established before the drop survive it.
+	# The old code flushed conntrack only inside the is_up branch, so a
+	# stop that found the tunnel already down (a double-stop, or a prior
+	# partial teardown) left stale conntrack -- and the flowtable offload
+	# entries bound to it -- alive. Those are what let DNS intermittently
+	# escape after the tunnel went down: verify.sh check 3 caught it on
+	# hardware, failing only some runs. So: flush conntrack, then re-run
+	# the firewall script so the kill switch is freshly asserted with the
+	# tunnel down (50-wgq is idempotent, fails closed, and flushes
+	# conntrack again itself -- belt and suspenders on the exact path a
+	# kill switch cannot afford to get wrong).
+	flush_conntrack
+	run_fw
 }
 
 cmd_status() {
