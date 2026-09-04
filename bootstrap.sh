@@ -89,9 +89,31 @@ if [ -z "$NAME" ]; then
 fi
 REPO=$(pwd)
 
+# Where this tree stands relative to a signed release: REPORTED, never
+# gated -- installing a branch is how development happens -- but the
+# human about to type dom0 commands should see whether what they hold
+# is an attested release or a moving branch, on the same screen as
+# those commands.
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+	TREE='not a git checkout; release verification unavailable'
+elif RELEASE=$(git describe --exact-match --tags HEAD 2>/dev/null) && [ -n "$RELEASE" ]; then
+	if git verify-tag "$RELEASE" >/dev/null 2>&1; then
+		TREE="release $RELEASE -- tag signature VERIFIED"
+	else
+		TREE="release $RELEASE -- tag signature NOT verified here.
+           Import the key and compare its fingerprint with SECURITY.md:
+               gpg --locate-keys hexac@existin.space
+               git verify-tag $RELEASE"
+	fi
+else
+	TREE="development tree: $(git rev-parse --abbrev-ref HEAD 2>/dev/null)@$(git rev-parse --short HEAD 2>/dev/null) -- not a release.
+           For a verified release:  git verify-tag <project>-vX.Y.Z && git checkout <project>-vX.Y.Z"
+fi
+
 printf '\n== all checks passed ==\n\n'
 printf 'projects:  %s\n' "$*"
 printf 'artifacts:\n%s' "$ARTIFACTS"
+printf 'tree:      %s\n' "$TREE"
 printf 'qube:      %s\n' "$NAME"
 printf 'repo:      %s\n\n' "$REPO"
 

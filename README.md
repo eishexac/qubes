@@ -58,8 +58,20 @@ DispVM, then:
 
 ```sh
 git clone https://github.com/eishexac/qubes.git ~/qubes
-cd ~/qubes && sh bootstrap.sh <project>...        # one or more, e.g. wgq
+cd ~/qubes
+
+# Release install (recommended): verify the signed tag and pin to it.
+# The fingerprint gpg shows MUST match the one in SECURITY.md.
+gpg --locate-keys hexac@existin.space
+git verify-tag wgq-v0.1.0 && git checkout wgq-v0.1.0
+
+sh bootstrap.sh <project>...        # one or more, e.g. wgq
 ```
+
+Skipping the verify/checkout installs the tip of `main` — a development
+tree, not an attested release. Either way `bootstrap.sh` prints which of
+the two you are holding (`tree:` in its summary) right above the dom0
+commands, so the decision is visible at the moment it matters.
 
 It checks dependencies, runs the project's tests, proves the build
 reproduces, and prints the exact dom0 commands — with the disposable's

@@ -17,7 +17,8 @@ fail() { printf 'FAIL: %s\n' "$*"; failures=$((failures + 1)); }
 if (cd "$ROOT" && sh bootstrap.sh wgq) >"$out" 2>&1; then
 	if grep -q 'airlock pull' "$out" \
 		&& grep -q 'airlock apply wgq' "$out" \
-		&& grep -q 'dist/wgq' "$out"; then
+		&& grep -q 'dist/wgq' "$out" \
+		&& grep -q '^tree:' "$out"; then
 		ok "bootstrap builds, verifies, and prints the dom0 steps"
 	else
 		cat "$out"; fail "bootstrap output is missing pieces"
