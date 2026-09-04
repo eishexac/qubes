@@ -58,6 +58,11 @@ Then:
 git verify-tag wgq-v0.1.0
 ```
 
+This is not a side ritual: the recommended install pins to the verified
+tag (`git checkout wgq-v0.1.0`) before `bootstrap.sh` runs, and
+bootstrap reports on its summary screen whether the tree it just built
+is a verified release or a development branch.
+
 Artifacts attached to a release are conveniences. The builds are
 deterministic, so rebuild from the verified tag and compare instead of
 trusting a download: `make -C <project> && sha256sum <project>/dist/*`
