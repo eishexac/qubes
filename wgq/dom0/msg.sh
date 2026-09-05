@@ -47,7 +47,10 @@ trace() {
 	fi
 }
 
-note() { _say ''   ''         "$*"; }
-ok()   { _say '32' ''         "$*"; }
+note() { _say '' '' "$*"; }
+ok() { _say '32' '' "$*"; }
 warn() { _say '33' 'warning:' "$*"; }
-die()  { _say '31' 'error:'   "$*"; exit 1; }
+die() {
+	_say '31' 'error:' "$*"
+	exit 1
+}

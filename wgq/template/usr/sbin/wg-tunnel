@@ -23,7 +23,10 @@ TUN=wg0
 FW_SCRIPT=/etc/qubes/qubes-firewall.d/50-wgq
 PROG=${0##*/}
 
-die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
+die() {
+	printf '%s: %s\n' "$PROG" "$*" >&2
+	exit 1
+}
 info() { printf '%s: %s\n' "$PROG" "$*" >&2; }
 
 need_root() {
@@ -47,7 +50,7 @@ check_config() {
 	# wg-quick only warns about a world-readable config, so enforce it here.
 	mode=$(stat -Lc '%a' "$LINK")
 	case "$mode" in
-		600|400) ;;
+		600 | 400) ;;
 		*) die "$(readlink -f "$LINK") is mode $mode; must be 600" ;;
 	esac
 }
@@ -154,9 +157,15 @@ cmd_status() {
 }
 
 case "${1:-}" in
-	up)      cmd_up ;;
-	down)    cmd_down ;;
-	restart) cmd_down; cmd_up ;;
-	status)  cmd_status ;;
-	*)       printf 'usage: %s {up|down|restart|status}\n' "$PROG" >&2; exit 2 ;;
+	up) cmd_up ;;
+	down) cmd_down ;;
+	restart)
+		cmd_down
+		cmd_up
+		;;
+	status) cmd_status ;;
+	*)
+		printf 'usage: %s {up|down|restart|status}\n' "$PROG" >&2
+		exit 2
+		;;
 esac

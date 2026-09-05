@@ -36,7 +36,10 @@ ASSUME_YES=0
 ENDPOINTS=""
 NET_TIMEOUT=8
 
-RESULTS=$(mktemp) || { echo "cannot create a temp file" >&2; exit 2; }
+RESULTS=$(mktemp) || {
+	echo "cannot create a temp file" >&2
+	exit 2
+}
 trap 'rm -f "$RESULTS"' EXIT INT TERM
 
 usage() {
@@ -47,25 +50,64 @@ usage() {
 	exit 2
 }
 
-record() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$RESULTS"; }
-pass()   { printf '  PASS  %s\n' "$2"; record PASS "$1" "$2"; }
-fail()   { printf '  FAIL  %s\n' "$2"; record FAIL "$1" "$2"; }
-skip()   { printf '  SKIP  %s\n' "$2"; record SKIP "$1" "$2"; }
-head2()  { printf '\n== %s ==\n' "$1"; }
+record() { printf '%s\t%s\t%s\n' "$1" "$2" "$3" >>"$RESULTS"; }
+pass() {
+	printf '  PASS  %s\n' "$2"
+	record PASS "$1" "$2"
+}
+fail() {
+	printf '  FAIL  %s\n' "$2"
+	record FAIL "$1" "$2"
+}
+skip() {
+	printf '  SKIP  %s\n' "$2"
+	record SKIP "$1" "$2"
+}
+head2() { printf '\n== %s ==\n' "$1"; }
 
 while [ $# -gt 0 ]; do
 	case "$1" in
-		--dns)         DNS=${2:?}; shift 2 ;;
-		--endpoint)    ENDPOINTS="$ENDPOINTS ${2:?}"; shift 2 ;;
-		--exit-ip)     EXIT_IP=${2:?}; shift 2 ;;
-		--clearnet-ip) CLEARNET_IP=${2:?}; shift 2 ;;
-		--provider)    PROVIDER=${2:?}; shift 2 ;;
-		--peer)        PEER=${2:?}; shift 2 ;;
-		--pcap)        PCAP=${2:?}; shift 2 ;;
-		--stage)       STAGE=${2:?}; shift 2 ;;
-		--yes|-y)      ASSUME_YES=1; shift ;;
-		-h|--help)     usage ;;
-		*)             printf 'unknown option: %s\n' "$1" >&2; usage ;;
+		--dns)
+			DNS=${2:?}
+			shift 2
+			;;
+		--endpoint)
+			ENDPOINTS="$ENDPOINTS ${2:?}"
+			shift 2
+			;;
+		--exit-ip)
+			EXIT_IP=${2:?}
+			shift 2
+			;;
+		--clearnet-ip)
+			CLEARNET_IP=${2:?}
+			shift 2
+			;;
+		--provider)
+			PROVIDER=${2:?}
+			shift 2
+			;;
+		--peer)
+			PEER=${2:?}
+			shift 2
+			;;
+		--pcap)
+			PCAP=${2:?}
+			shift 2
+			;;
+		--stage)
+			STAGE=${2:?}
+			shift 2
+			;;
+		--yes | -y)
+			ASSUME_YES=1
+			shift
+			;;
+		-h | --help) usage ;;
+		*)
+			printf 'unknown option: %s\n' "$1" >&2
+			usage
+			;;
 	esac
 done
 
@@ -86,7 +128,7 @@ fetch() { curl -fsS --max-time "$NET_TIMEOUT" "$1" 2>/dev/null; }
 confirm() {
 	[ "$ASSUME_YES" -eq 1 ] && return 0
 	printf '\n%s\nPress Enter when done, or Ctrl-C to stop. ' "$1"
-	read -r _ignored < /dev/tty || return 1
+	read -r _ignored </dev/tty || return 1
 	return 0
 }
 
@@ -332,7 +374,7 @@ report() {
 		printf '  %-5s check %s: %s\n' "$status" "$number" "$message"
 		[ "$status" = "FAIL" ] && failed=$((failed + 1))
 		[ "$status" = "SKIP" ] && skipped=$((skipped + 1))
-	done < "$RESULTS"
+	done <"$RESULTS"
 
 	if [ "$failed" -gt 0 ]; then
 		printf '\n%s check(s) FAILED. This zone is not leak-tight.\n' "$failed"

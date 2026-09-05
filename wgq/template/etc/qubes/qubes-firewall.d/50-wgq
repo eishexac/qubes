@@ -28,7 +28,7 @@ RUN_DIR=/run/wgq
 STATE="$RUN_DIR/state"
 
 note() { logger -t wgq-firewall -p daemon.notice -- "$*"; }
-warn() { logger -t wgq-firewall -p daemon.err    -- "$*"; }
+warn() { logger -t wgq-firewall -p daemon.err -- "$*"; }
 
 # Role is decided by the qube's service flag, not by what happens to be on
 # disk: the Salt formula marks VPN qubes with the wgq-vpn service, so
@@ -39,7 +39,7 @@ mkdir -p "$RUN_DIR" || warn "cannot create $RUN_DIR; state will go unrecorded"
 
 panic() {
 	warn "FAILED: $* -- disabling forwarding"
-	printf 'broken: %s\n' "$*" > "$STATE"
+	printf 'broken: %s\n' "$*" >"$STATE"
 	sysctl -qw net.ipv4.ip_forward=0 2>/dev/null
 	sysctl -qw net.ipv6.conf.all.forwarding=0 2>/dev/null
 	# The sysctl gates the forward path, but a flow already offloaded into
@@ -61,7 +61,7 @@ fi
 
 is_ipv4() {
 	case "$1" in
-		''|*[!0-9.]*) return 1 ;;
+		'' | *[!0-9.]*) return 1 ;;
 	esac
 	# Split on dots via IFS rather than a subshell. The expansion happens
 	# before set runs, so reading $1 here is safe.
@@ -84,7 +84,7 @@ is_ipv4() {
 # nothing, which is the exact silent failure this project exists to avoid.
 # ---------------------------------------------------------------------------
 
-nft list chain ip  qubes custom-forward >/dev/null 2>&1 \
+nft list chain ip qubes custom-forward >/dev/null 2>&1 \
 	|| panic "no 'ip qubes custom-forward' chain"
 nft list chain ip6 qubes custom-forward >/dev/null 2>&1 \
 	|| panic "no 'ip6 qubes custom-forward' chain"
@@ -164,7 +164,7 @@ HOOK_DIR=/rw/config/network-hooks.d
 HOOK="$HOOK_DIR/90-wgq-no-accel"
 if [ ! -x "$HOOK" ]; then
 	mkdir -p "$HOOK_DIR" || warn "cannot create $HOOK_DIR; accel table will revive on vif events"
-	cat > "$HOOK" <<'HOOKEOF' || warn "cannot install $HOOK"
+	cat >"$HOOK" <<'HOOKEOF' || warn "cannot install $HOOK"
 #!/bin/sh
 # Installed by 50-wgq. A VPN qube must not fast-path client flows past its
 # kill switch: vif-route-qubes re-creates the qubes-nat-accel flowtable on
@@ -197,10 +197,12 @@ if [ -n "$target" ]; then
 	base=${target##*/}
 	base=${base%.conf}
 	case "$base" in
-		''|.|..|*[!A-Za-z0-9_=+.-]*)
-			warn "refusing peer name '$base' from $LINK" ;;
+		'' | . | .. | *[!A-Za-z0-9_=+.-]*)
+			warn "refusing peer name '$base' from $LINK"
+			;;
 		*)
-			peer=$base ;;
+			peer=$base
+			;;
 	esac
 fi
 
@@ -208,7 +210,10 @@ dns=''
 if [ -n "$peer" ] && [ -f "$WG_DIR/peers/$peer.meta" ]; then
 	dns=$(sed -n 's/^dns=\(.*\)$/\1/p' "$WG_DIR/peers/$peer.meta" \
 		| head -n 1 | tr -d '[:space:]')
-	is_ipv4 "$dns" || { warn "peer '$peer' has an unusable resolver: '$dns'"; dns=''; }
+	is_ipv4 "$dns" || {
+		warn "peer '$peer' has an unusable resolver: '$dns'"
+		dns=''
+	}
 fi
 
 # One transaction, same reason as the kill switch above: between a flush
@@ -236,10 +241,10 @@ $rule_tcp
 EOF
 
 if [ -n "$dns" ]; then
-	printf 'ok peer=%s dns=%s\n' "$peer" "$dns" > "$STATE"
+	printf 'ok peer=%s dns=%s\n' "$peer" "$dns" >"$STATE"
 else
 	printf 'degraded: no resolver for peer=%s; client DNS dropped\n' \
-		"${peer:-none}" > "$STATE"
+		"${peer:-none}" >"$STATE"
 fi
 
 # Same standard as the kill switch: trust what reads back, not return codes.

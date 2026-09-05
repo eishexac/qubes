@@ -69,6 +69,12 @@ check:
 	else \
 		printf 'shellcheck NOT INSTALLED - shell went unlinted\n'; \
 	fi
+	@if command -v shfmt >/dev/null 2>&1; then \
+		shfmt -ci -bn -d $(SHELL_SCRIPTS) || exit 1; \
+		printf 'shfmt ok\n'; \
+	else \
+		printf 'shfmt NOT INSTALLED - formatting went unchecked\n'; \
+	fi
 	@for f in dom0/icons/*.svg; do \
 		$(PYTHON) -c "import sys,xml.dom.minidom as m; m.parse('$$f')" \
 			|| { printf 'invalid SVG (XML not well-formed): %s\n' "$$f"; exit 1; }; \
