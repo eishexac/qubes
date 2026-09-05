@@ -54,5 +54,11 @@ self-check:
 		else \
 			printf 'shellcheck NOT INSTALLED - top-level shell unlinted\n'; \
 		fi; \
+		if command -v shfmt >/dev/null 2>&1; then \
+			shfmt -ci -bn -d $(SELF_SHELL) || exit 1; \
+			printf 'shfmt ok (top level)\n'; \
+		else \
+			printf 'shfmt NOT INSTALLED - top-level shell unformatted-checked\n'; \
+		fi; \
 	fi
 	@for t in $(wildcard test/*.sh); do sh "$$t" || exit 1; done

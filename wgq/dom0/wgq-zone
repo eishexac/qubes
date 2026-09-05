@@ -47,14 +47,14 @@ check_zone() {
 	# Mirrors the wgq CLI's zone rule; 21 chars keeps sys-wgq-/sys-fw-
 	# names inside Qubes' 31-character limit.
 	case "$1" in
-		''|*[!a-z0-9-]*|-*) die "unusable zone name '$1' (lowercase, digits, dashes)" ;;
+		'' | *[!a-z0-9-]* | -*) die "unusable zone name '$1' (lowercase, digits, dashes)" ;;
 	esac
 	[ ${#1} -le 21 ] || die "zone name '$1' is longer than 21 characters"
 }
 
 check_qube_name() {
 	case "$1" in
-		''|*[!A-Za-z0-9_.-]*) die "unusable qube name '$1'" ;;
+		'' | *[!A-Za-z0-9_.-]*) die "unusable qube name '$1'" ;;
 	esac
 }
 
@@ -69,7 +69,7 @@ zone_exists() { qvm-check --quiet "sys-fw-$1" 2>/dev/null; }
 is_ours() {
 	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
 	case "$(qvm-prefs "$1" label 2>/dev/null)" in
-		wgq|wgq-fw|wgq-mgmt|wgq-tpl) return 0 ;;
+		wgq | wgq-fw | wgq-mgmt | wgq-tpl) return 0 ;;
 	esac
 	return 1
 }
@@ -81,7 +81,7 @@ vpn_name() {
 	if [ "$1" = wgq ]; then printf 'sys-wgq\n'; else printf 'sys-wgq-%s\n' "$1"; fi
 }
 
-current_netvm() { qvm-prefs "$1" netvm 2>/dev/null || printf '' ; }
+current_netvm() { qvm-prefs "$1" netvm 2>/dev/null || printf ''; }
 
 # Attach one qube to a zone. Crossing out of another zone is a decision,
 # so it always asks; same-zone re-attach is a quiet no-op.
@@ -106,8 +106,11 @@ attach_qube() {
 			a_ans=""
 			read -r a_ans || true
 			case "$a_ans" in
-				y|yes) ;;
-				*) note "left $a_qube in zone $a_from"; return 0 ;;
+				y | yes) ;;
+				*)
+					note "left $a_qube in zone $a_from"
+					return 0
+					;;
 			esac
 			;;
 	esac
@@ -135,7 +138,7 @@ offer_name_match() {
 	o_ans=""
 	read -r o_ans || true
 	case "$o_ans" in
-		y|yes) attach_qube "$o_zone" "$o_zone" ;;
+		y | yes) attach_qube "$o_zone" "$o_zone" ;;
 	esac
 }
 
@@ -159,13 +162,15 @@ cmd_add() {
 				[ $# -ge 2 ] || usage
 				check_qube_name "$2"
 				upstream=$2
-				shift 2 ;;
+				shift 2
+				;;
 			--attach)
 				# One qube, or a typed list: --attach work,media. Still
 				# only ever names the operator wrote out.
 				if [ $# -lt 2 ] || [ -z "$2" ]; then usage; fi
 				attach_list="$attach_list $(printf '%s' "$2" | tr ',' ' ')"
-				shift 2 ;;
+				shift 2
+				;;
 			*) usage ;;
 		esac
 	done
@@ -259,10 +264,25 @@ cmd_remove() {
 }
 
 case "${1:-}" in
-	add)    shift; cmd_add "$@" ;;
-	attach) shift; cmd_attach "$@" ;;
-	detach) shift; cmd_detach "$@" ;;
-	list)   shift; cmd_list "$@" ;;
-	remove) shift; cmd_remove "$@" ;;
-	*)      usage ;;
+	add)
+		shift
+		cmd_add "$@"
+		;;
+	attach)
+		shift
+		cmd_attach "$@"
+		;;
+	detach)
+		shift
+		cmd_detach "$@"
+		;;
+	list)
+		shift
+		cmd_list "$@"
+		;;
+	remove)
+		shift
+		cmd_remove "$@"
+		;;
+	*) usage ;;
 esac

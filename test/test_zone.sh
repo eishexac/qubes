@@ -14,15 +14,18 @@ WORK=$(mktemp -d) || exit 2
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
 failures=0
-ok()   { printf 'ok:   %s\n' "$*"; }
-fail() { printf 'FAIL: %s\n' "$*"; failures=$((failures + 1)); }
+ok() { printf 'ok:   %s\n' "$*"; }
+fail() {
+	printf 'FAIL: %s\n' "$*"
+	failures=$((failures + 1))
+}
 
 # ---- fakes ----------------------------------------------------------------
 # State: $WORK/qubes holds "name|class|netvm|provides_network" rows;
 # $WORK/running lists the qubes that are up (fresh zone qubes are born
 # halted, exactly as on a real machine).
 mkdir -p "$WORK/bin"
-cat > "$WORK/qubes" <<'EOF'
+cat >"$WORK/qubes" <<'EOF'
 work|AppVM|sys-firewall|False
 media|AppVM|sys-firewall|False
 mail|AppVM|sys-firewall|False
@@ -32,7 +35,7 @@ sys-firewall|AppVM|sys-net|True
 tpl1|TemplateVM|-|False
 EOF
 
-cat > "$WORK/bin/qvm-check" <<'EOF'
+cat >"$WORK/bin/qvm-check" <<'EOF'
 #!/bin/sh
 running=0
 for a in "$@"; do case "$a" in --quiet) ;; --running) running=1 ;; *) name=$a ;; esac; done
@@ -40,14 +43,14 @@ grep -q "^${name}|" "${FAKEQ:?}" || exit 1
 [ "$running" -eq 0 ] || grep -qx "$name" "${RUNNING:?}"
 EOF
 
-cat > "$WORK/bin/qvm-start" <<'EOF'
+cat >"$WORK/bin/qvm-start" <<'EOF'
 #!/bin/sh
 for a in "$@"; do case "$a" in -*) ;; *) name=$a ;; esac; done
 grep -qx "$name" "${RUNNING:?}" || printf '%s\n' "$name" >> "$RUNNING"
 printf 'started %s\n' "$name" >> "${QCTL_LOG:?}"
 EOF
 
-cat > "$WORK/bin/qvm-prefs" <<'EOF'
+cat >"$WORK/bin/qvm-prefs" <<'EOF'
 #!/bin/sh
 name=$1 prop=$2
 case "$prop" in
@@ -64,12 +67,12 @@ case "$prop" in
 esac
 EOF
 
-cat > "$WORK/bin/qubes-prefs" <<'EOF'
+cat >"$WORK/bin/qubes-prefs" <<'EOF'
 #!/bin/sh
 [ "$1" = default_netvm ] && echo sys-firewall
 EOF
 
-cat > "$WORK/bin/qvm-ls" <<'EOF'
+cat >"$WORK/bin/qvm-ls" <<'EOF'
 #!/bin/sh
 fields=name
 for a in "$@"; do case "$prev" in --fields) fields=$a ;; esac; prev=$a; done
@@ -88,7 +91,7 @@ awk -F'|' -v f="$fields" 'BEGIN { n = split(f, want, ",") }
 }' "${FAKEQ:?}"
 EOF
 
-cat > "$WORK/bin/qubesctl" <<'EOF'
+cat >"$WORK/bin/qubesctl" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >> "${QCTL_LOG:?}"
 zone=$(printf '%s' "$*" | sed -n 's/.*"zone": "\([a-z0-9-]*\)".*/\1/p')
@@ -102,19 +105,19 @@ if [ -n "$zone" ]; then
 fi
 EOF
 
-cat > "$WORK/bin/qvm-shutdown" <<'EOF'
+cat >"$WORK/bin/qvm-shutdown" <<'EOF'
 #!/bin/sh
 exit 0
 EOF
 
-cat > "$WORK/bin/qvm-remove" <<'EOF'
+cat >"$WORK/bin/qvm-remove" <<'EOF'
 #!/bin/sh
 for a in "$@"; do case "$a" in -f) ;; *) name=$a ;; esac; done
 grep -v "^${name}|" "${FAKEQ:?}" > "$FAKEQ.tmp"; mv "$FAKEQ.tmp" "$FAKEQ"
 printf 'removed %s\n' "$name" >> "${QCTL_LOG:?}"
 EOF
 
-cat > "$WORK/bin/qvm-tags" <<'EOF'
+cat >"$WORK/bin/qvm-tags" <<'EOF'
 #!/bin/sh
 name=$1 verb=$2
 case "$verb" in
@@ -126,9 +129,9 @@ EOF
 
 chmod +x "$WORK/bin/"*
 export FAKEQ="$WORK/qubes" QCTL_LOG="$WORK/qctl.log" RUNNING="$WORK/running" TAGS="$WORK/tags"
-: > "$TAGS"
-: > "$QCTL_LOG"
-printf 'sys-net\nsys-firewall\n' > "$RUNNING"
+: >"$TAGS"
+: >"$QCTL_LOG"
+printf 'sys-net\nsys-firewall\n' >"$RUNNING"
 
 zone() { env PATH="$WORK/bin:$PATH" sh "$ZONE" "$@"; }
 netvm_of() { awk -F'|' -v n="$1" '$1 == n {print $3}' "$FAKEQ"; }
@@ -151,7 +154,8 @@ if zone add tz </dev/null >"$WORK/out" 2>&1 \
 	&& [ "$(netvm_of media)" = "sys-firewall" ]; then
 	ok "plain add creates the zone, starts its firewall, attaches nothing"
 else
-	cat "$WORK/out"; fail "plain add went wrong"
+	cat "$WORK/out"
+	fail "plain add went wrong"
 fi
 
 # 3. add asks the name-match question and honours the answer.
@@ -160,7 +164,8 @@ if printf 'y\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" add work >"$WORK/out" 2>
 	&& [ "$(netvm_of work)" = "sys-fw-work" ]; then
 	ok "name-match prompt attaches the matching qube on yes"
 else
-	cat "$WORK/out"; fail "interactive name-match went wrong"
+	cat "$WORK/out"
+	fail "interactive name-match went wrong"
 fi
 
 # 4. Moving a qube across zones asks; 'no' leaves it put.
@@ -169,13 +174,15 @@ if printf 'n\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" attach tz work >"$WORK/o
 	&& [ "$(netvm_of work)" = "sys-fw-work" ]; then
 	ok "cross-zone move refused without consent"
 else
-	cat "$WORK/out"; fail "cross-zone protection went wrong"
+	cat "$WORK/out"
+	fail "cross-zone protection went wrong"
 fi
 if printf 'y\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" attach tz work >"$WORK/out" 2>&1 \
 	&& [ "$(netvm_of work)" = "sys-fw-tz" ]; then
 	ok "cross-zone move happens after an explicit yes"
 else
-	cat "$WORK/out"; fail "consented move went wrong"
+	cat "$WORK/out"
+	fail "consented move went wrong"
 fi
 
 # 5. add --attach wires the named qubes, comma list included.
@@ -184,18 +191,20 @@ if zone add z2 --attach media,mail >"$WORK/out" 2>&1 \
 	&& [ "$(netvm_of mail)" = "sys-fw-z2" ]; then
 	ok "add --attach wires the named qubes"
 else
-	cat "$WORK/out"; fail "add --attach went wrong"
+	cat "$WORK/out"
+	fail "add --attach went wrong"
 fi
 
 # 5b. Attaching to a zone whose firewall was shut down since creation
 # starts it again first; the client still lands where it was pointed.
-: > "$RUNNING"
+: >"$RUNNING"
 if zone attach z2 dev >"$WORK/out" 2>&1 \
 	&& grep -q 'started sys-fw-z2' "$QCTL_LOG" \
 	&& [ "$(netvm_of dev)" = "sys-fw-z2" ]; then
 	ok "attach starts a halted zone firewall before rewiring"
 else
-	cat "$WORK/out"; fail "the halted-zone attach guard went wrong"
+	cat "$WORK/out"
+	fail "the halted-zone attach guard went wrong"
 fi
 
 # 6. A bad upstream is refused before anything is created.
@@ -213,16 +222,21 @@ if printf 'work\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove tz >"$WORK/out
 elif grep -q 'still attached' "$WORK/out"; then
 	ok "remove refuses while a client is attached"
 else
-	cat "$WORK/out"; fail "remove refusal failed for the wrong reason"
+	cat "$WORK/out"
+	fail "remove refusal failed for the wrong reason"
 fi
 if zone detach work nosuch >"$WORK/out" 2>&1; then
 	fail "detach accepted a nonexistent replacement netvm"
 elif grep -q "no such netvm" "$WORK/out" && [ "$(netvm_of work)" = "sys-fw-tz" ]; then
 	ok "detach refuses a replacement netvm that does not exist"
 else
-	cat "$WORK/out"; fail "bad-netvm refusal failed for the wrong reason"
+	cat "$WORK/out"
+	fail "bad-netvm refusal failed for the wrong reason"
 fi
-zone detach work >"$WORK/out" 2>&1 || { cat "$WORK/out"; fail "detach failed"; }
+zone detach work >"$WORK/out" 2>&1 || {
+	cat "$WORK/out"
+	fail "detach failed"
+}
 if [ "$(netvm_of work)" = "sys-firewall" ]; then
 	ok "detach returns the qube to the default netvm"
 else
@@ -233,14 +247,16 @@ if printf 'tz\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove tz >"$WORK/out" 
 	&& ! grep -q '^sys-wgq-tz|' "$FAKEQ"; then
 	ok "typed confirmation removes the empty zone"
 else
-	cat "$WORK/out"; fail "zone removal went wrong"
+	cat "$WORK/out"
+	fail "zone removal went wrong"
 fi
 
 # 8. list names zones and their clients.
 if zone list >"$WORK/out" 2>&1 && grep -q 'clients:' "$WORK/out"; then
 	ok "list shows zones and clients"
 else
-	cat "$WORK/out"; fail "list went wrong"
+	cat "$WORK/out"
+	fail "list went wrong"
 fi
 
 # 9. Bare `add` prompts; Enter takes the single-VPN default: bare sys-wgq.
@@ -250,7 +266,8 @@ if printf '\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" add >"$WORK/out" 2>&1 \
 	&& grep -q '^sys-fw-wgq|' "$FAKEQ"; then
 	ok "bare add defaults to the singleton (sys-wgq + sys-fw-wgq)"
 else
-	cat "$WORK/out"; fail "singleton default went wrong"
+	cat "$WORK/out"
+	fail "singleton default went wrong"
 fi
 
 # 10. The magic attach flags are gone for good: a sweep that once rewired
@@ -263,7 +280,8 @@ elif ! grep -q '"zone": "z9"' "$QCTL_LOG" \
 	&& [ "$(netvm_of media)" = "sys-fw-z2" ]; then
 	ok "the deleted attach flags are refused before anything runs"
 else
-	cat "$WORK/out"; fail "a deleted attach flag still did something"
+	cat "$WORK/out"
+	fail "a deleted attach flag still did something"
 fi
 
 # 11. Removing the singleton zone removes the bare-named qube.
@@ -275,20 +293,22 @@ if printf 'wgq\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove wgq >"$WORK/out
 	&& ! grep -q '^sys-fw-wgq|' "$FAKEQ"; then
 	ok "singleton zone removal takes the bare-named qube"
 else
-	cat "$WORK/out"; fail "singleton removal went wrong"
+	cat "$WORK/out"
+	fail "singleton removal went wrong"
 fi
 
 # 12. A stranger's qube sharing the sys-fw-* grammar is not a zone: not
 # listed, not routed through, not destroyed. The created-by-wgq tag
 # stamped at creation is the proof; a name proves nothing.
-printf 'sys-fw-alien|AppVM|sys-firewall|True\n' >> "$FAKEQ"
-printf 'sys-fw-alien\n' >> "$RUNNING"
+printf 'sys-fw-alien|AppVM|sys-firewall|True\n' >>"$FAKEQ"
+printf 'sys-fw-alien\n' >>"$RUNNING"
 if zone list >"$WORK/out" 2>&1 \
 	&& grep -q 'sys-fw-alien exists but was not created by wgq' "$WORK/out" \
 	&& ! grep -q '^alien ' "$WORK/out"; then
 	ok "list refuses to present a stranger's qube as a zone"
 else
-	cat "$WORK/out"; fail "a foreign qube was listed as a zone"
+	cat "$WORK/out"
+	fail "a foreign qube was listed as a zone"
 fi
 if zone attach alien media >"$WORK/out" 2>&1; then
 	fail "attach routed a client through a stranger's qube"
@@ -296,14 +316,16 @@ elif grep -q 'refusing to route' "$WORK/out" \
 	&& [ "$(netvm_of media)" = "sys-fw-z2" ]; then
 	ok "attach refuses a firewall wgq did not make"
 else
-	cat "$WORK/out"; fail "the foreign-attach refusal failed for the wrong reason"
+	cat "$WORK/out"
+	fail "the foreign-attach refusal failed for the wrong reason"
 fi
 if printf 'alien\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove alien >"$WORK/out" 2>&1; then
 	fail "remove destroyed a stranger's qube"
 elif grep -q 'refusing to destroy' "$WORK/out" && grep -q '^sys-fw-alien|' "$FAKEQ"; then
 	ok "remove refuses a firewall wgq did not make"
 else
-	cat "$WORK/out"; fail "the foreign-remove refusal failed for the wrong reason"
+	cat "$WORK/out"
+	fail "the foreign-remove refusal failed for the wrong reason"
 fi
 
 if [ "$failures" -gt 0 ]; then

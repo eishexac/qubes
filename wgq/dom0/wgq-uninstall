@@ -25,8 +25,11 @@ step() {
 	s_ans=""
 	read -r s_ans || s_ans=q
 	case "$s_ans" in
-		y|yes) return 0 ;;
-		s|skip) note "skipped"; return 1 ;;
+		y | yes) return 0 ;;
+		s | skip)
+			note "skipped"
+			return 1
+			;;
 		*) die "stopped; later steps not run" ;;
 	esac
 }
@@ -44,7 +47,7 @@ read -r ans || true
 is_ours() {
 	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
 	case "$(qvm-prefs "$1" label 2>/dev/null)" in
-		wgq|wgq-fw|wgq-mgmt|wgq-tpl) return 0 ;;
+		wgq | wgq-fw | wgq-mgmt | wgq-tpl) return 0 ;;
 	esac
 	return 1
 }
@@ -57,7 +60,7 @@ for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || tru
 	fi
 	zone=${fw#sys-fw-}
 	vpn="sys-wgq-$zone"
-	[ "$zone" = wgq ] && vpn=sys-wgq   # the single-VPN default zone
+	[ "$zone" = wgq ] && vpn=sys-wgq # the single-VPN default zone
 	clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
 		| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
 	if [ -n "${clients% }" ]; then

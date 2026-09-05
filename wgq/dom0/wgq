@@ -61,7 +61,7 @@ usage() {
 
 check_zone() {
 	case "$1" in
-		''|*[!a-z0-9-]*|-*) die "unusable zone name '$1' (lowercase, digits, dashes)" ;;
+		'' | *[!a-z0-9-]* | -*) die "unusable zone name '$1' (lowercase, digits, dashes)" ;;
 	esac
 }
 
@@ -100,9 +100,12 @@ cmd_panic() {
 	# Accept -z after the verb too (`panic -z work`), the shape the
 	# usage line advertises.
 	case "${1:-}" in
-		-z|--zone)
+		-z | --zone)
 			[ $# -eq 2 ] || usage
-			zone=$2; PANIC_ONE=1; shift 2 ;;
+			zone=$2
+			PANIC_ONE=1
+			shift 2
+			;;
 	esac
 	[ $# -eq 0 ] || usage
 	if [ "$PANIC_ONE" = 1 ]; then
@@ -149,11 +152,12 @@ zone=wgq
 PANIC_ONE=0
 while [ $# -gt 0 ]; do
 	case "$1" in
-		-z|--zone)
+		-z | --zone)
 			[ $# -ge 2 ] || usage
 			zone=$2
 			PANIC_ONE=1
-			shift 2 ;;
+			shift 2
+			;;
 		-*) usage ;;
 		*) break ;;
 	esac
@@ -163,22 +167,26 @@ verb=$1
 
 case "$verb" in
 	panic)
-		shift; cmd_panic "$@" ;;
+		shift
+		cmd_panic "$@"
+		;;
 	zone)
 		shift
 		# The sub-tool's own hints then name the command the operator
 		# actually has on PATH.
 		WGQ_PROG="$PROG zone" export WGQ_PROG
-		exec "$wgq_here/wgq-zone" "$@" ;;
+		exec "$wgq_here/wgq-zone" "$@"
+		;;
 	uninstall)
-		exec "$wgq_here/wgq-uninstall" ;;
+		exec "$wgq_here/wgq-uninstall"
+		;;
 	credential)
 		# The secret is typed in dom0 and piped straight into the file
 		# inside wgq-mgmt: it never touches a disk outside that qube.
 		[ $# -eq 2 ] || usage
 		provider=$2
 		case "$provider" in
-			''|*[!a-z0-9-]*) die "unusable provider name '$provider'" ;;
+			'' | *[!a-z0-9-]*) die "unusable provider name '$provider'" ;;
 		esac
 		printf '%s account id (input hidden): ' "$provider"
 		stty -echo 2>/dev/null || true
@@ -197,7 +205,8 @@ case "$verb" in
 		printf '%s\n' "$acct" | qvm-run --no-gui --pass-io -u root -- "$MGMT" \
 			"umask 077 && cat > /rw/config/$provider-account && chown user:user /rw/config/$provider-account"
 		ok "credential stored in $MGMT:/rw/config/$provider-account (mode 600, owner user)"
-		exit 0 ;;
+		exit 0
+		;;
 	sync)
 		# The qvm-copy dance, framed: stream the bundle out of wgq-mgmt
 		# and into the zone's VPN qube, then apply it there. The zone
@@ -209,15 +218,21 @@ case "$verb" in
 		trace "   | qvm-run -u root $s_vpn 'tar -xf - && wgq apply peers'"
 		qvm-run --no-gui --pass-io -u user -- "$MGMT" \
 			"tar -C /home/user/.local/share/wgq/zones/$zone -cf - peers" \
-		| qvm-run --no-gui --pass-io -u root -- "$s_vpn" \
-			"rm -rf /tmp/wgq-sync && mkdir -p /tmp/wgq-sync && tar -xf - -C /tmp/wgq-sync && wgq apply /tmp/wgq-sync/peers && rm -rf /tmp/wgq-sync"
-		exit 0 ;;
-	keygen|apply|switch)
+			| qvm-run --no-gui --pass-io -u root -- "$s_vpn" \
+				"rm -rf /tmp/wgq-sync && mkdir -p /tmp/wgq-sync && tar -xf - -C /tmp/wgq-sync && wgq apply /tmp/wgq-sync/peers && rm -rf /tmp/wgq-sync"
+		exit 0
+		;;
+	keygen | apply | switch)
 		check_zone "$zone"
-		shift; run_in "$(vpn_name "$zone")" root "$verb" "$@" ;;
-	pubkey|status)
+		shift
+		run_in "$(vpn_name "$zone")" root "$verb" "$@"
+		;;
+	pubkey | status)
 		check_zone "$zone"
-		shift; run_in "$(vpn_name "$zone")" user "$verb" "$@" ;;
+		shift
+		run_in "$(vpn_name "$zone")" user "$verb" "$@"
+		;;
 	*)
-		run_in "$MGMT" user "$@" ;;
+		run_in "$MGMT" user "$@"
+		;;
 esac
