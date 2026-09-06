@@ -49,17 +49,19 @@ case "$SELF" in */*) wgq_here=${SELF%/*} ;; *) wgq_here=. ;; esac
 MGMT=${WGQ_MGMT:-wgq-mgmt}
 
 usage() {
-	printf 'usage: %s zone <verb> ...           (dom0: add attach detach list remove)\n' "$PROG" >&2
+	printf 'usage: %s <command> [zone] ...      (no zone named? a picker asks -- never a guess)\n' "$PROG" >&2
+	printf '       %s zone <verb> ...           (dom0: add attach detach list remove)\n' "$PROG" >&2
 	printf '       %s panic [-z <zone>]         (EMERGENCY: kill + block every zone, or one)\n' "$PROG" >&2
-	printf '       %s verify [-z <zone>] [--kill-rounds N]  (prove the zone leak-tight)\n' "$PROG" >&2
+	printf '       %s verify [zone] [--kill-rounds N]  (prove the zone leak-tight)\n' "$PROG" >&2
 	printf '       %s doctor                    (check every wgq invariant, with fixes)\n' "$PROG" >&2
-	printf '       %s connect|disconnect        (tunnel up / zone dark -- never clear)\n' "$PROG" >&2
-	printf '       %s set [--global] autoconnect on|off | set [--global] dns <ip>|default | get\n' "$PROG" >&2
+	printf '       %s connect|disconnect [zone]  (aliases up|down; dark -- never clear)\n' "$PROG" >&2
+	printf '       %s set [--global] [zone] autoconnect|dns <value>|default | get [zone]\n' "$PROG" >&2
 	printf '       %s uninstall\n' "$PROG" >&2
 	printf '       %s credential <provider>     (store the account id in %s)\n' "$PROG" "$MGMT" >&2
-	printf '       %s [-z <zone>] sync          (peer bundle: %s -> VPN qube + apply)\n' "$PROG" "$MGMT" >&2
-	printf '       %s [-z <zone>] keygen|pubkey|apply|switch|status ...\n' "$PROG" >&2
+	printf '       %s sync [zone]               (peer bundle: %s -> VPN qube + apply)\n' "$PROG" "$MGMT" >&2
+	printf '       %s keygen|pubkey|status [zone] | apply|switch [zone] <arg>\n' "$PROG" >&2
 	printf '       %s <mgmt verb> ...           (servers provision peer firewall ...)\n' "$PROG" >&2
+	printf '       -z <zone> is accepted anywhere and always means the same thing\n' >&2
 	exit 2
 }
 
@@ -68,6 +70,78 @@ check_zone() {
 		'' | *[!a-z0-9-]* | -*) die "unusable zone name '$1' (lowercase, digits, dashes)" ;;
 	esac
 }
+
+is_ours() {
+	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
+	case "$(qvm-prefs "$1" label 2>/dev/null)" in
+		wgq | wgq-fw | wgq-mgmt | wgq-tpl) return 0 ;;
+	esac
+	return 1
+}
+
+owned_zones() {
+	for oz_fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
+		is_ours "$oz_fw" || continue
+		printf '%s\n' "${oz_fw#sys-fw-}"
+	done
+}
+
+is_owned_zone() {
+	case "$1" in '' | *[!a-z0-9-]* | -*) return 1 ;; esac
+	owned_zones | grep -qx "$1"
+}
+
+# The idiom: a zone is NAMED or PICKED, never implied. No zone on the
+# line and a terminal attached: the picker opens -- even with one zone,
+# because choosing from a one-item list is an explicit act, and a
+# command's behavior must not change the day a second zone appears.
+# No terminal: refuse and list the zones; scripts get neither prompts
+# nor guesses. pick_zone 1 allows multi-select (per-zone verbs).
+pick_zone() {
+	pz_zones=$(owned_zones)
+	[ -n "$pz_zones" ] || die "no zones exist; create one with: $PROG zone add <name>"
+	if [ ! -t 0 ] || [ ! -t 2 ]; then
+		die "no zone named and no terminal to ask on. Zones: $(printf '%s' "$pz_zones" | tr '\n' ' ')"
+	fi
+	if command -v fzf >/dev/null 2>&1; then
+		if [ "$1" = 1 ]; then
+			printf '%s\n' "$pz_zones" \
+				| fzf --multi --prompt='zone> ' --height=40% --reverse \
+				|| die "no zone chosen"
+		else
+			printf '%s\n' "$pz_zones" \
+				| fzf --prompt='zone> ' --height=40% --reverse \
+				|| die "no zone chosen"
+		fi
+		return 0
+	fi
+	pz_i=0
+	for pz in $pz_zones; do
+		pz_i=$((pz_i + 1))
+		printf '  %d) %s\n' "$pz_i" "$pz" >&2
+	done
+	if [ "$1" = 1 ]; then
+		printf 'zone number(s), space-separated: ' >&2
+	else
+		printf 'zone number: ' >&2
+	fi
+	read -r pz_ans </dev/tty || die "no zone chosen"
+	[ -n "$pz_ans" ] || die "no zone chosen"
+	if [ "$1" != 1 ]; then
+		case "$pz_ans" in *' '*) die "pick exactly one" ;; esac
+	fi
+	for pz_n in $pz_ans; do
+		case "$pz_n" in '' | *[!0-9]*) die "not a number: '$pz_n'" ;; esac
+		pz_sel=$(printf '%s\n' "$pz_zones" | sed -n "${pz_n}p")
+		[ -n "$pz_sel" ] || die "no zone numbered $pz_n"
+		printf '%s\n' "$pz_sel"
+	done
+}
+
+# Consume $1 as a positional zone when it names an owned zone. Callers
+# pass the minimum arg count the verb still needs afterwards, so
+# `switch <peer>` never eats a peer that happens to share a zone's name.
+# (Used inline: helpers cannot shift a caller's args in POSIX sh.)
 
 vpn_name() {
 	if [ "$1" = wgq ]; then printf 'sys-wgq'; else printf 'sys-wgq-%s' "$1"; fi
@@ -152,7 +226,7 @@ run_in() {
 	exec qvm-run --no-gui --pass-io -u "$r_user" -- "$r_qube" "$r_cmd"
 }
 
-zone=wgq
+zone=''
 PANIC_ONE=0
 # `-z <zone>` is accepted ANYWHERE on the line: the zone is the
 # sentence's subject, and word order must never change meaning --
@@ -207,17 +281,68 @@ case "$verb" in
 		;;
 	verify)
 		shift
+		if [ -z "$zone" ] && [ $# -ge 1 ] && is_owned_zone "$1"; then
+			zone=$1
+			shift
+		fi
 		WGQ_PROG="$PROG verify" export WGQ_PROG
-		exec "$wgq_here/wgq-verify" --zone "$zone" "$@"
+		if [ -n "$zone" ]; then
+			exec "$wgq_here/wgq-verify" --zone "$zone" "$@"
+		fi
+		v_rc=0
+		for v_z in $(pick_zone 1); do
+			"$wgq_here/wgq-verify" --zone "$v_z" "$@" || v_rc=1
+		done
+		exit "$v_rc"
 		;;
 	doctor)
 		shift
 		WGQ_PROG="$PROG doctor" export WGQ_PROG
 		exec "$wgq_here/wgq-doctor" "$@"
 		;;
-	connect | disconnect | set | get)
+	connect | disconnect | up | down)
+		case "$verb" in up) verb=connect ;; down) verb=disconnect ;; esac
+		shift
+		if [ -z "$zone" ] && [ $# -ge 1 ] && is_owned_zone "$1"; then
+			zone=$1
+			shift
+		fi
+		[ $# -eq 0 ] || usage
 		WGQ_PROG="$PROG" export WGQ_PROG
-		exec "$wgq_here/wgq-ctl" --zone "$zone" "$@"
+		if [ -n "$zone" ]; then
+			exec "$wgq_here/wgq-ctl" --zone "$zone" "$verb"
+		fi
+		# picked, possibly several: per-zone verbs multi-select
+		c_rc=0
+		for c_z in $(pick_zone 1); do
+			"$wgq_here/wgq-ctl" --zone "$c_z" "$verb" || c_rc=1
+		done
+		exit "$c_rc"
+		;;
+	set | get)
+		shift
+		v_global=0
+		[ "$verb" = set ] && [ "${1:-}" = --global ] && v_global=1
+		if [ "$v_global" -eq 0 ] && [ -z "$zone" ] && [ $# -ge 1 ]; then
+			case "$1" in
+				autoconnect | dns | default) ;; # a key, not a zone
+				*)
+					if is_owned_zone "$1"; then
+						zone=$1
+						shift
+					fi
+					;;
+			esac
+		fi
+		if [ -z "$zone" ]; then
+			if [ "$v_global" -eq 1 ]; then
+				zone=- # global writes have no subject qube
+			else
+				zone=$(pick_zone 0)
+			fi
+		fi
+		WGQ_PROG="$PROG" export WGQ_PROG
+		exec "$wgq_here/wgq-ctl" --zone "$zone" "$verb" "$@"
 		;;
 	uninstall)
 		exec "$wgq_here/wgq-uninstall"
@@ -253,7 +378,13 @@ case "$verb" in
 		# The qvm-copy dance, framed: stream the bundle out of wgq-mgmt
 		# and into the zone's VPN qube, then apply it there. The zone
 		# name is validated above, so embedding it is safe.
-		[ $# -eq 1 ] || usage
+		shift
+		if [ -z "$zone" ] && [ $# -ge 1 ] && is_owned_zone "$1"; then
+			zone=$1
+			shift
+		fi
+		[ $# -eq 0 ] || usage
+		[ -n "$zone" ] || zone=$(pick_zone 0)
 		check_zone "$zone"
 		s_vpn=$(vpn_name "$zone")
 		trace "-> qvm-run -u user $MGMT 'tar -C ~/.local/share/wgq/zones/$zone -cf - peers'"
@@ -264,15 +395,29 @@ case "$verb" in
 				"rm -rf /tmp/wgq-sync && mkdir -p /tmp/wgq-sync && tar -xf - -C /tmp/wgq-sync && wgq apply /tmp/wgq-sync/peers && rm -rf /tmp/wgq-sync"
 		exit 0
 		;;
-	keygen | apply | switch)
-		check_zone "$zone"
+	keygen | apply | switch | pubkey | status)
 		shift
-		run_in "$(vpn_name "$zone")" root "$verb" "$@"
-		;;
-	pubkey | status)
+		# keygen/pubkey/status take no own arguments, so a first arg is
+		# a zone or a mistake; apply and switch keep their last argument
+		# (path, peer) even when it collides with a zone's name.
+		case "$verb" in
+			apply | switch) v_min=1 ;;
+			*) v_min=0 ;;
+		esac
+		if [ -z "$zone" ] && [ $# -gt "$v_min" ]; then
+			if is_owned_zone "$1"; then
+				zone=$1
+				shift
+			elif [ "$v_min" -eq 0 ]; then
+				die "'$1' is not a zone ($verb takes none of its own arguments)"
+			fi
+		fi
+		[ -n "$zone" ] || zone=$(pick_zone 0)
 		check_zone "$zone"
-		shift
-		run_in "$(vpn_name "$zone")" user "$verb" "$@"
+		case "$verb" in
+			keygen | apply | switch) run_in "$(vpn_name "$zone")" root "$verb" "$@" ;;
+			*) run_in "$(vpn_name "$zone")" user "$verb" "$@" ;;
+		esac
 		;;
 	*)
 		run_in "$MGMT" user "$@"

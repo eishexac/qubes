@@ -4,7 +4,30 @@ Newest first. The top section is the pending version and grows as
 changes merge; releasing stamps its date and signs the tag. Entries
 record what changed for the person running the tool.
 
-## [0.2.0] — unreleased
+## [0.3.0] — unreleased
+
+Breaking release in progress: named zones only, and the zone becomes a
+positional. See docs/lifecycle.md as sections land.
+
+### Added
+
+- The zone is a positional on every zone verb: `wgq disconnect work`,
+  `wgq connect work`, `wgq verify work`, `wgq set work dns <ip>`.
+  `up`/`down` are aliases for connect/disconnect. With no zone named:
+  on a terminal a picker opens — always, even with one zone (choosing
+  from a one-item list is explicit; a guess is not) — and per-zone
+  verbs multi-select; without a terminal the command refuses and lists
+  the zones. Nothing is ever implied.
+- `-z <zone>` is accepted anywhere on the line and keeps working
+  everywhere; `--zone` after a management verb still belongs to that
+  verb.
+
+### Changed
+
+- Zone names may not be `autoconnect`, `dns` or `default`: they are the
+  words that let `set` tell a key from a zone.
+
+## [0.2.0] — 2026-09-06
 
 ### Added
 

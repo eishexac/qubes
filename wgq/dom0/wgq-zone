@@ -48,6 +48,11 @@ check_zone() {
 	# names inside Qubes' 31-character limit.
 	case "$1" in
 		'' | *[!a-z0-9-]* | -*) die "unusable zone name '$1' (lowercase, digits, dashes)" ;;
+		autoconnect | dns | default)
+			# The words that let `set` tell a key from a zone; a zone
+			# wearing one would make the grammar ambiguous forever.
+			die "'$1' is a settings word and cannot name a zone"
+			;;
 	esac
 	[ ${#1} -le 21 ] || die "zone name '$1' is longer than 21 characters"
 }

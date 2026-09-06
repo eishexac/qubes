@@ -112,6 +112,14 @@ sudo wgq doctor
 
 ### Connection lifecycle
 
+The zone is a positional on every zone verb — `wgq disconnect work`,
+`wgq verify work`, `wgq set work dns <ip>` (`up`/`down` alias
+connect/disconnect). Name no zone and, on a terminal, a picker opens —
+always, even with one zone: choosing from a one-item list is explicit,
+a guess is not — and per-zone verbs multi-select. Without a terminal
+the command refuses and lists the zones. `-z <zone>` works anywhere on
+the line, unchanged.
+
 The tunnel connects at boot by default. Both halves are yours to drive:
 
 ```sh
