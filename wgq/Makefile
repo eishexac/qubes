@@ -63,6 +63,9 @@ $(DIST): $(SOURCES) $(MKZIPAPP)
 check:
 	$(PYTHON) -m compileall -q src
 	@$(PYTHON) -m py_compile dom0/verify-probes.py && printf 'probes compile ok\n'
+	@for t in dom0/wgq dom0/wgq-ctl dom0/wgq-doctor dom0/wgq-uninstall dom0/wgq-verify dom0/wgq-zone; do \
+		[ -x "$$t" ] || { printf '%s is not executable -- the dispatcher exec hits permission denied in dom0\n' "$$t"; exit 1; }; \
+	done; printf 'dom0 tools executable ok\n'
 	@for f in $(SHELL_SCRIPTS); do \
 		sh -n "$$f" || exit 1; \
 		printf 'sh -n ok: %s\n' "$$f"; \
