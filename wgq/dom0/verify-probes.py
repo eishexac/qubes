@@ -67,17 +67,24 @@ def parse_answers(data: bytes, tid: int) -> list[str]:
     if flags & 0x000F:
         raise ValueError(f"rcode {flags & 0x000F}")
     off = 12
-    for _ in range(qdcount):
-        off = skip_name(data, off) + 4
-    addresses = []
-    for _ in range(ancount):
-        off = skip_name(data, off)
-        rtype, rclass, _ttl, rdlength = struct.unpack(">HHIH", data[off : off + 10])
-        off += 10
-        rdata = data[off : off + rdlength]
-        off += rdlength
-        if rtype == 1 and rclass == 1 and rdlength == 4:
-            addresses.append(".".join(str(b) for b in rdata))
+    try:
+        for _ in range(qdcount):
+            off = skip_name(data, off) + 4
+        addresses = []
+        for _ in range(ancount):
+            off = skip_name(data, off)
+            rtype, rclass, _ttl, rdlength = struct.unpack(
+                ">HHIH", data[off : off + 10]
+            )
+            off += 10
+            rdata = data[off : off + rdlength]
+            off += rdlength
+            if len(rdata) != rdlength:
+                raise ValueError("truncated rdata")
+            if rtype == 1 and rclass == 1 and rdlength == 4:
+                addresses.append(".".join(str(b) for b in rdata))
+    except struct.error as exc:  # truncated packet: not an answer
+        raise ValueError(f"truncated response: {exc}") from None
     if not addresses:
         raise ValueError("no A records")
     return addresses
@@ -111,22 +118,45 @@ def dns_probe(server: str, name: str) -> dict:
 
 
 # -- other probes -----------------------------------------------------------
+#
+# The kill test asks a different question than the tunnel-up checks: not
+# "did I get a valid answer" but "did ANY evidence of my packet come
+# back". With the tunnel down, an NXDOMAIN from a clearnet resolver, a
+# TCP reset, an ICMP error -- each one is a round trip in the clear and
+# therefore a leak. Only silence (a timeout) is clean. Anything the
+# probe cannot classify counts as a leak: the verifier must fail toward
+# FAIL, never toward certifying a broken zone.
 
 
-def https_probe(url: str) -> dict:
+def dns_roundtrip(server: str, name: str) -> bool:
+    """True if ANY datagram comes back -- rcode and validity irrelevant."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(DNS_TIMEOUT)
     try:
-        with urllib.request.urlopen(url, timeout=TIMEOUT) as resp:
-            return {"ok": True, "status": resp.status}
-    except Exception as exc:  # noqa: BLE001 -- any failure means unreachable
-        return {"ok": False, "error": str(exc)}
+        sock.sendto(build_query(name, 0x5747), (server, 53))
+        sock.recvfrom(4096)
+        return True
+    except TimeoutError:
+        return False
+    except OSError:
+        return True  # ICMP error delivered locally: something answered
+    finally:
+        sock.close()
 
 
-def tcp_probe(ip: str, port: int) -> dict:
+def tcp_roundtrip(ip: str, port: int) -> bool:
+    """True on any evidence of a round trip: connect, refuse, or error.
+
+    A refused connection means our SYN left and a RST came back -- a
+    leak even though nothing "connected". Only a timeout is silence.
+    """
     try:
         socket.create_connection((ip, port), timeout=DNS_TIMEOUT).close()
-        return {"ok": True}
-    except OSError as exc:
-        return {"ok": False, "error": str(exc)}
+        return True
+    except TimeoutError:
+        return False
+    except OSError:
+        return True
 
 
 def exit_ip() -> dict:
@@ -153,21 +183,32 @@ def mode_dnscheck(argv: list[str]) -> dict:
 
 
 def mode_killcheck(argv: list[str]) -> dict:
-    """With the tunnel down, every probe here must fail; a success leaks."""
-    leaked = []
-    if https_probe("https://1.1.1.1/").get("ok"):
-        leaked.append("https/1.1.1.1")
-    if mode_dnscheck(["system", "killprobe.example.net"]).get("ok"):
-        leaked.append("dns/system")
-    if dns_probe("192.0.2.1", "killprobe.example.net").get("ok"):
-        leaked.append("dns/arbitrary")
+    """With the tunnel down, every probe must meet SILENCE; a round trip
+    of any kind leaks. A probe that crashes counts as leaked -- a broken
+    detector must never read as a clean zone."""
+    checks = [("tcp/1.1.1.1:443", lambda: tcp_roundtrip("1.1.1.1", 443))]
+    checks += [
+        (f"dns/system:{server}", lambda s=server: dns_roundtrip(s, "killprobe.example.net"))
+        for server in system_resolvers()
+    ]
+    checks.append(("dns/8.8.8.8", lambda: dns_roundtrip("8.8.8.8", "killprobe.example.net")))
+    checks.append(("dns/192.0.2.1", lambda: dns_roundtrip("192.0.2.1", "killprobe.example.net")))
     if len(argv) >= 2:
-        if tcp_probe(argv[0], int(argv[1])).get("ok"):
-            leaked.append(f"tcp/{argv[0]}:{argv[1]}")
-    return {"ok": not leaked, "leaked": leaked}
+        checks.append(
+            (f"tcp/{argv[0]}:{argv[1]}", lambda: tcp_roundtrip(argv[0], int(argv[1])))
+        )
+    leaked = []
+    for label, check in checks:
+        try:
+            if check():
+                leaked.append(label)
+        except Exception as exc:  # noqa: BLE001
+            leaked.append(f"{label} (probe crashed: {exc})")
+    return {"ok": not leaked, "ran": len(checks), "leaked": leaked}
 
 
 def main(argv: list[str]) -> int:
+    socket.setdefaulttimeout(TIMEOUT)  # bounds getaddrinfo too
     if not argv:
         print(__doc__.strip(), file=sys.stderr)
         return 2

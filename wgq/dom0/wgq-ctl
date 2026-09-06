@@ -60,14 +60,26 @@ is_ours() {
 }
 is_ours "$vpn" || die "$vpn was not created by wgq; refusing to drive it"
 
+# --no-autostart everywhere: only `connect` may bring the qube up, and
+# it does so explicitly. A status read or a disconnect that BOOTS the
+# zone (and, with autoconnect on, establishes the tunnel) would be the
+# tool contradicting its own verbs.
 vpn_root() {
 	trace "-> qvm-run -u root $vpn: $*"
-	qvm-run --no-gui --pass-io -u root -- "$vpn" "$*"
+	qvm-run --no-gui --no-autostart --pass-io -u root -- "$vpn" "$*"
+}
+
+vpn_running() {
+	qvm-check --quiet --running "$vpn" 2>/dev/null
 }
 
 is_ipv4() {
+	# No empty octets (leading/trailing/double dots) and no leading
+	# zeros: nft reads 010.1.1.1 as OCTAL, and a trailing dot fails the
+	# whole nft transaction and seals the zone over a typo.
 	case "$1" in
-		'' | *[!0-9.]*) return 1 ;;
+		'' | *[!0-9.]* | .* | *. | *..*) return 1 ;;
+		0[0-9]* | *.0[0-9]*) return 1 ;;
 	esac
 	oldifs=$IFS
 	IFS=.
@@ -98,6 +110,10 @@ case "$verb" in
 		;;
 	disconnect)
 		[ $# -eq 0 ] || usage
+		if ! vpn_running; then
+			ok "zone $zone is already dark ($vpn is halted)"
+			exit 0
+		fi
 		vpn_root 'systemctl stop wg-tunnel' >/dev/null
 		ok "zone $zone is dark: the kill switch holds, clients get nothing until: sudo wgq -z $zone connect"
 		;;
@@ -113,7 +129,10 @@ case "$verb" in
 						ok "zone $zone will boot sealed (tunnel down, forwarding refused) until an explicit connect"
 						;;
 					on)
-						qvm-features --unset "$vpn" service.wgq-no-autoconnect 2>/dev/null || :
+						if [ -n "$(qvm-features "$vpn" service.wgq-no-autoconnect 2>/dev/null || :)" ]; then
+							qvm-features --unset "$vpn" service.wgq-no-autoconnect \
+								|| die "could not clear the autoconnect flag on $vpn"
+						fi
 						ok "zone $zone connects at boot again (the default)"
 						;;
 					*) die "autoconnect is on or off, not '$value'" ;;
@@ -121,6 +140,7 @@ case "$verb" in
 				note "takes effect from the next start of $vpn"
 				;;
 			dns)
+				vpn_running || die "$vpn is halted; start the zone first: sudo wgq -z $zone connect"
 				if [ "$value" = default ]; then
 					vpn_root 'rm -f /rw/config/wg/dns' >/dev/null
 					ok "zone $zone resolver override removed; the provider resolver is pinned again"
@@ -137,6 +157,7 @@ case "$verb" in
 				state=$(vpn_root 'cat /run/wgq/state' 2>/dev/null || :)
 				case "$state" in
 					ok\ *) ok "firewall re-applied ($state)" ;;
+					degraded:*) die "firewall re-applied but reports '$state': forwarding is up and clients have NO DNS until a usable resolver is set" ;;
 					*) die "firewall re-apply reports '${state:-nothing}'; the zone sealed itself -- run: sudo wgq doctor" ;;
 				esac
 				;;
@@ -150,11 +171,12 @@ case "$verb" in
 		else
 			printf 'autoconnect: on\n'
 		fi
-		override=$(vpn_root 'cat /rw/config/wg/dns' 2>/dev/null || :)
-		printf 'dns:         %s\n' "${override:-provider default}"
-		if qvm-check --quiet --running "$vpn" 2>/dev/null; then
+		if vpn_running; then
+			override=$(vpn_root 'cat /rw/config/wg/dns' 2>/dev/null || :)
+			printf 'dns:         %s\n' "${override:-provider default}"
 			printf 'tunnel:      %s\n' "$(vpn_root 'cat /run/wgq/state' 2>/dev/null || printf unknown)"
 		else
+			printf 'dns:         (unknown: %s is halted)\n' "$vpn"
 			printf 'tunnel:      %s halted\n' "$vpn"
 		fi
 		;;

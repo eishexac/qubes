@@ -67,7 +67,7 @@ case "$zone" in
 	'' | *[!a-z0-9-]* | -*) die "unusable zone name '$zone'" ;;
 esac
 case "$rounds" in
-	'' | *[!0-9]*) die "--kill-rounds expects a number" ;;
+	'' | *[!0-9]* | 0) die "--kill-rounds expects a positive number" ;;
 esac
 
 vpnq="sys-wgq-$zone"
@@ -150,25 +150,49 @@ report() { # report <PASS|FAIL|SKIP> <n> <text>
 
 # -- parameters, gathered not asked for -------------------------------------
 
-state=$(vpn_root 'cat /run/wgq/state' || :)
+state=$(vpn_root 'cat /run/wgq/state' | sanitize || :)
 case "$state" in
 	ok\ peer=*) ;;
 	*) die "zone '$zone' firewall state is '${state:-unknown}'; bring the tunnel up first: sudo wgq -z $zone connect (no peer yet? sudo wgq switch)" ;;
 esac
 resolver=${state##*dns=}
 
-endpoint=$(vpn_root 'wg show wg0 endpoints' | awk 'NR==1 {print $2}' || :)
-case "$endpoint" in
-	*.*.*.*:*) ;;
-	*) die "no live endpoint on $vpnq (wg show gave '${endpoint:-nothing}'); bring the tunnel up: sudo wgq -z $zone connect (no peer yet? sudo wgq switch)" ;;
-esac
+# Everything a qube prints is untrusted input: strip it to a safe
+# charset before it touches a dom0 terminal or another qvm-run.
+sanitize() { tr -cd 'a-zA-Z0-9 .,:=_/-'; }
+
+is_ipv4() {
+	case "$1" in
+		'' | *[!0-9.]* | .* | *. | *..*) return 1 ;;
+		0[0-9]* | *.0[0-9]*) return 1 ;;
+	esac
+	oldifs=$IFS
+	IFS=.
+	# shellcheck disable=SC2086 # deliberate word splitting on IFS
+	set -- $1
+	IFS=$oldifs
+	[ $# -eq 4 ] || return 1
+	for octet in "$@"; do
+		[ -n "$octet" ] || return 1
+		[ "$octet" -le 255 ] 2>/dev/null || return 1
+	done
+	return 0
+}
+
+endpoint=$(vpn_root 'wg show wg0 endpoints' | awk 'NR==1 {print $2}' | sanitize || :)
 ep_ip=${endpoint%:*}
 ep_port=${endpoint##*:}
+# The endpoint crosses into a command run IN THE CLIENT QUBE; a
+# compromised VPN qube must not be able to smuggle shell through it.
+if ! is_ipv4 "$ep_ip" || ! case "$ep_port" in '' | *[!0-9]*) false ;; esac \
+	|| [ "$ep_port" -gt 65535 ]; then
+	die "no live endpoint on $vpnq (wg show gave '${endpoint:-nothing}'); bring the tunnel up: sudo wgq -z $zone connect (no peer yet? sudo wgq switch)"
+fi
 
 if [ -z "$clearnet" ]; then
 	clearnet=$(qvm-run --no-gui --pass-io -u user -- "$MGMT" \
 		"python3 -c \"import urllib.request; print(urllib.request.urlopen('https://ifconfig.me/ip', timeout=8).read(64).decode().strip())\"" \
-		2>/dev/null || :)
+		2>/dev/null | sanitize || :)
 fi
 
 note "zone $zone: client $client, endpoint $endpoint, resolver $resolver"
@@ -180,7 +204,7 @@ qvm-run --no-gui --pass-io -- "$client" 'cat > /tmp/wgq-probes.py' <"$PROBES"
 # -- check 1: the exit address reflects the tunnel --------------------------
 
 result=$(probe exitip)
-exit_ip=$(printf '%s' "$result" | jfield ip)
+exit_ip=$(printf '%s' "$result" | jfield ip | sanitize)
 if [ -z "$exit_ip" ]; then
 	report FAIL 1 "client could not learn its public address at all"
 elif [ -z "$clearnet" ]; then
@@ -210,15 +234,33 @@ kill_failed=0
 while [ "$round" -le "$rounds" ]; do
 	trace "-> round $round/$rounds: systemctl stop wg-tunnel on $vpnq"
 	vpn_root 'systemctl stop wg-tunnel' >/dev/null || :
-	# Prove the stop happened; a verifier that cannot tell whether its
-	# own kill landed is the dig bug wearing a new hat.
-	if vpn_root 'ip link show wg0' >/dev/null 2>&1; then
+	# Prove the stop happened -- with an AFFIRMATIVE answer. An error
+	# exit could be qrexec failing (with the stop never delivered), and
+	# an error notice is not an answer; that lesson is paid for.
+	alive=$(vpn_root 'ip link show wg0 >/dev/null 2>&1 && echo yes || echo no' | sanitize || :)
+	case "$alive" in
+		no) ;;
+		yes)
+			vpn_root 'systemctl start wg-tunnel' >/dev/null || :
+			die "wg0 still exists after stop; refusing to call this a kill test"
+			;;
+		*)
+			vpn_root 'systemctl start wg-tunnel' >/dev/null || :
+			die "could not verify the tunnel stopped ($vpnq gave no answer); refusing to guess"
+			;;
+	esac
+	# The probe result must prove it RAN. Empty or unparseable output --
+	# qrexec hiccup, python crash, clobbered probe file -- must never
+	# read as a clean round: a broken detector is not a sealed zone.
+	kill_out=$(probe killcheck "$ep_ip" "$ep_port")
+	ran=$(printf '%s' "$kill_out" | jfield ran)
+	leaked=$(printf '%s' "$kill_out" | jfield leaked | sanitize)
+	if ! [ "${ran:-0}" -ge 1 ] 2>/dev/null; then
 		vpn_root 'systemctl start wg-tunnel' >/dev/null || :
-		die "wg0 still exists after stop; refusing to call this a kill test"
+		die "kill probes did not run in round $round (client returned no result); refusing to certify"
 	fi
-	leaked=$(probe killcheck "$ep_ip" "$ep_port" | jfield leaked)
 	if [ -n "$leaked" ]; then
-		report FAIL 3 "round $round: traffic escaped with the tunnel down: $leaked"
+		warn "round $round: traffic escaped with the tunnel down: $leaked"
 		kill_failed=1
 	fi
 	trace "-> round $round/$rounds: systemctl start wg-tunnel on $vpnq"
@@ -233,8 +275,11 @@ while [ "$round" -le "$rounds" ]; do
 	done
 	round=$((round + 1))
 done
-[ "$kill_failed" -eq 0 ] \
-	&& report PASS 3 "nothing escaped with the tunnel down ($rounds round(s)), and recovery was proven each time"
+if [ "$kill_failed" -eq 0 ]; then
+	report PASS 3 "nothing escaped with the tunnel down ($rounds round(s)), and recovery was proven each time"
+else
+	report FAIL 3 "traffic escaped with the tunnel down (details above)"
+fi
 
 # -- check 4: upstream capture ----------------------------------------------
 
