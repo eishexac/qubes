@@ -132,7 +132,7 @@ cat >"$WORK/bin/qvm-run" <<'EOF'
 while [ $# -gt 0 ]; do
 	case "$1" in
 		-u) shift 2 ;;
-		--no-gui | --pass-io | --) shift ;;
+		--no-gui | --no-autostart | --pass-io | --) shift ;;
 		*) break ;;
 	esac
 done
@@ -433,13 +433,14 @@ else
 fi
 grep -v '^sys-wgq-alien|' "$FAKEQ" >"$FAKEQ.tmp" && mv "$FAKEQ.tmp" "$FAKEQ"
 
-# 11b. list --json emits one parseable document with the zone rows, and
-# the foreign-qube note stays on stderr where a parser never sees it.
+# 11b. list --json emits one parseable document with at least the zone
+# rows this harness created -- an empty [] must not pass.
 if zone list --json >"$WORK/out" 2>/dev/null \
 	&& python3 -c "
 import json, sys
 rows = json.load(open('$WORK/out'))
 assert isinstance(rows, list), rows
+assert any(r.get('zone') == 'work' for r in rows), rows
 for r in rows:
 	assert set(r) == {'zone', 'vpn', 'fw', 'clients'}, r
 	assert isinstance(r['clients'], list), r

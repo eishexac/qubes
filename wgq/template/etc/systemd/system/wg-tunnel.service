@@ -8,6 +8,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+TimeoutStartSec=90
 ExecStart=/usr/sbin/wg-tunnel up
 ExecStop=/usr/sbin/wg-tunnel down
 

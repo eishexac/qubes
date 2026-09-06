@@ -156,8 +156,23 @@ cmd_status() {
 	fi
 }
 
+cmd_autostart() {
+	# Boot-time entry, called by wg-autoconnect.service on EVERY boot.
+	# The firewall seal is unconditional -- qubes-firewall.d runs 50-wgq
+	# too, but a second independent installer at boot is defence the
+	# autoconnect flag must not remove. Only the tunnel start is gated.
+	need_root
+	if [ -f /var/run/qubes-service/wgq-no-autoconnect ]; then
+		run_fw
+		info "autoconnect is off; zone boots sealed until 'wgq connect'"
+		return 0
+	fi
+	exec systemctl start wg-tunnel.service
+}
+
 case "${1:-}" in
 	up) cmd_up ;;
+	autostart) cmd_autostart ;;
 	down) cmd_down ;;
 	restart)
 		cmd_down
@@ -165,7 +180,7 @@ case "${1:-}" in
 		;;
 	status) cmd_status ;;
 	*)
-		printf 'usage: %s {up|down|restart|status}\n' "$PROG" >&2
+		printf 'usage: %s {up|down|restart|status|autostart}\n' "$PROG" >&2
 		exit 2
 		;;
 esac

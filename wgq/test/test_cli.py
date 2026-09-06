@@ -90,9 +90,6 @@ class TestDom0Detection(unittest.TestCase):
             cli.Path.is_file = real_isfile
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestJsonOutput(unittest.TestCase):
     """--json emits exactly one parseable document on stdout.
@@ -103,7 +100,6 @@ class TestJsonOutput(unittest.TestCase):
     """
 
     def run_cli(self, argv, env):
-        import contextlib
         import os as _os
 
         old = {k: _os.environ.get(k) for k in env}
@@ -111,8 +107,10 @@ class TestJsonOutput(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         try:
             with redirect_stdout(out), redirect_stderr(err):
-                with contextlib.suppress(SystemExit):
+                try:
                     code = cli.main(argv)
+                except SystemExit as exc:  # argparse errors land here
+                    code = exc.code
         finally:
             for k, v in old.items():
                 if v is None:
@@ -162,3 +160,6 @@ class TestJsonOutput(unittest.TestCase):
             )
             self.assertEqual(code, 1)
             self.assertEqual(json.loads(out), [])
+
+if __name__ == "__main__":
+    unittest.main()

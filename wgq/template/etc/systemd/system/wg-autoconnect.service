@@ -9,18 +9,19 @@
 # make `wgq connect` a no-op on an autoconnect-off qube -- the exact
 # opposite of what the flag means. Split, the flag only touches boot.
 #
-# Autoconnect off still boots SEALED, not open: the kill switch and the
-# refuse-to-forward behavior come from qubes-firewall.d/50-wgq, which
-# runs regardless. An unconnected zone is a dark zone.
-Description=Start the WireGuard tunnel at boot (default on)
+# No Condition here either: the unit runs on EVERY boot, because
+# `wg-tunnel autostart` also re-installs the firewall seal -- a second
+# installer beside qubes-firewall that the autoconnect flag must not
+# remove. The flag is read inside autostart and gates only the tunnel.
+Description=Seal the firewall and start the tunnel at boot (default on)
 After=network-online.target qubes-misc-post.service
 Wants=network-online.target
-ConditionPathExists=!/var/run/qubes-service/wgq-no-autoconnect
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/systemctl start wg-tunnel.service
+TimeoutStartSec=90
+ExecStart=/usr/sbin/wg-tunnel autostart
 
 [Install]
 # Enabled in the TEMPLATE (see wg-tunnel.service for why).

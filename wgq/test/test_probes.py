@@ -66,6 +66,26 @@ class TestParseAnswers(unittest.TestCase):
         with self.assertRaises(ValueError):
             probes.parse_answers(response(answers=(("9.9.9.9", 5, 1),)), TID)
 
+    def test_rejects_truncation_inside_an_rr_header(self):
+        # A packet cut mid-answer must be "no answer", never a crash:
+        # struct.error escaping the parser once let a crashed kill probe
+        # read as a clean round.
+        data = response()
+        with self.assertRaises(ValueError):
+            probes.parse_answers(data[: len(data) - 8], TID)
+
+    def test_rejects_rdlength_beyond_buffer(self):
+        data = response()
+        # rdlength says 4; deliver 2 bytes of rdata.
+        with self.assertRaises(ValueError):
+            probes.parse_answers(data[: len(data) - 2], TID)
+
+    def test_rejects_lying_qdcount(self):
+        data = response()
+        lying = data[:4] + struct.pack(">H", 7) + data[6:]
+        with self.assertRaises(ValueError):
+            probes.parse_answers(lying, TID)
+
     def test_rejects_queries_and_junk(self):
         with self.assertRaises(ValueError):
             probes.parse_answers(response(flags=0x0100), TID)  # not a response
