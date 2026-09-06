@@ -54,6 +54,7 @@ usage() {
 	printf '       %s panic [-z <zone>]         (EMERGENCY: kill + block every zone, or one)\n' "$PROG" >&2
 	printf '       %s verify [zone] [--kill-rounds N]  (prove the zone leak-tight)\n' "$PROG" >&2
 	printf '       %s doctor                    (check every wgq invariant, with fixes)\n' "$PROG" >&2
+	printf '       %s restart [zone]            (offered shutdown/start cycle after updates)\n' "$PROG" >&2
 	printf '       %s connect|disconnect [zone]  (aliases up|down; dark -- never clear)\n' "$PROG" >&2
 	printf '       %s set [--global] [zone] autoconnect|dns <value>|default | get [zone]\n' "$PROG" >&2
 	printf '       %s uninstall\n' "$PROG" >&2
@@ -299,6 +300,19 @@ case "$verb" in
 		shift
 		WGQ_PROG="$PROG doctor" export WGQ_PROG
 		exec "$wgq_here/wgq-doctor" "$@"
+		;;
+	restart)
+		shift
+		# restart's subject is "everything stale", so bare restart is
+		# the full offered cycle, not a picker: the plan itself is the
+		# explicit choice, confirmed before anything moves.
+		if [ -z "$zone" ] && [ $# -ge 1 ] && is_owned_zone "$1"; then
+			zone=$1
+			shift
+		fi
+		[ $# -eq 0 ] || usage
+		WGQ_PROG="$PROG restart" export WGQ_PROG
+		exec "$wgq_here/wgq-restart" ${zone:+"$zone"}
 		;;
 	connect | disconnect | up | down)
 		case "$verb" in up) verb=connect ;; down) verb=disconnect ;; esac

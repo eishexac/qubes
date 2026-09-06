@@ -38,3 +38,5 @@ salt wgq.wg-mgmt
 # apply the endpoint allowlist through a dom0 'ask' prompt. Without it, the
 # tool prints a qvm-firewall block to paste instead.
 policy 30-wgq.policy
+# The plan can only speak here; the qubes belong to the wgq tool.
+note on upgrades, running wgq qubes keep the OLD template until restarted -- 'sudo wgq restart' offers the cycle (attached clients go dark during it)

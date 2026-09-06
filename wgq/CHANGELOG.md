@@ -21,6 +21,11 @@ positional. See docs/lifecycle.md as sections land.
 - `-z <zone>` is accepted anywhere on the line and keeps working
   everywhere; `--zone` after a management verb still belongs to that
   verb.
+- `wgq restart [zone]`: the shutdown/start cycle that makes an update
+  real, offered — the plan prints first, the clients that go dark are
+  named, one confirmation, declining runs nothing. The install plan now
+  ends with a note pointing at it (the plan can speak; the qubes belong
+  to the wgq tool).
 
 ### Changed
 

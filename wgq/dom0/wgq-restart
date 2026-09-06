@@ -1,0 +1,140 @@
+#!/bin/sh
+#
+# wgq-restart - the shutdown/start cycle that makes an update real.
+#
+#     sudo wgq restart              # the full cycle, offered
+#     sudo wgq restart <zone>       # one zone's pair only
+#
+# Running qubes keep the template root they booted with: after an
+# apply that changed the template, every running wgq qube is still the
+# OLD code until it restarts. This verb offers the cycle -- template
+# down, each running zone pair down and up, mgmt down and up -- and
+# names, before asking, the clients that will lose network while their
+# zone bounces. Dark, never clear: the kill switch semantics hold even
+# mid-maintenance. Declining means you do it by hand when convenient;
+# nothing restarts without the yes. Clients are never touched.
+
+set -eu
+
+PROG=${WGQ_PROG:-${0##*/}}
+case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
+# shellcheck source=dom0/msg.sh
+. "$wgq_here/msg.sh"
+
+TEMPLATE=${WGQ_TEMPLATE:-debian-13-wgq}
+MGMT=${WGQ_MGMT:-wgq-mgmt}
+
+is_ours() {
+	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
+	case "$(qvm-prefs "$1" label 2>/dev/null)" in
+		wgq | wgq-fw | wgq-mgmt | wgq-tpl) return 0 ;;
+	esac
+	return 1
+}
+
+running() {
+	qvm-check --quiet --running "$1" 2>/dev/null
+}
+
+only=''
+if [ $# -ge 1 ]; then
+	only=$1
+	shift
+	case "$only" in
+		'' | *[!a-z0-9-]* | -*) die "unusable zone name '$only'" ;;
+	esac
+fi
+[ $# -eq 0 ] || {
+	printf 'usage: %s [zone]\n' "$PROG" >&2
+	exit 2
+}
+
+# -- the plan, gathered before anything is asked ----------------------------
+
+plan_zones=''
+plan_clients=''
+for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
+	is_ours "$fw" || continue
+	zone=${fw#sys-fw-}
+	[ -z "$only" ] || [ "$zone" = "$only" ] || continue
+	vpn="sys-wgq-$zone"
+	[ "$zone" = wgq ] && vpn=sys-wgq
+	running "$fw" || running "$vpn" || continue
+	plan_zones="${plan_zones:+$plan_zones }$zone"
+	clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
+		| awk -F'|' -v fw="$fw" '$2 == fw {print $1}')
+	for c in $clients; do
+		running "$c" && plan_clients="${plan_clients:+$plan_clients }$c"
+	done
+done
+if [ -n "$only" ]; then
+	qvm-check --quiet "sys-fw-$only" 2>/dev/null || die "zone '$only' does not exist"
+	[ -n "$plan_zones" ] || die "zone '$only' is not running; nothing to cycle"
+fi
+
+do_template=0
+do_mgmt=0
+if [ -z "$only" ]; then
+	running "$TEMPLATE" && do_template=1
+	running "$MGMT" && is_ours "$MGMT" && do_mgmt=1
+fi
+
+if [ -z "$plan_zones" ] && [ "$do_template" -eq 0 ] && [ "$do_mgmt" -eq 0 ]; then
+	ok "nothing wgq-owned is running; nothing to cycle"
+	exit 0
+fi
+
+note "restart plan:"
+[ "$do_template" -eq 1 ] && note "  $TEMPLATE: shut down (templates stay halted)"
+for z in $plan_zones; do
+	vpn="sys-wgq-$z"
+	[ "$z" = wgq ] && vpn=sys-wgq
+	note "  zone $z: sys-fw-$z + $vpn down, then up"
+done
+[ "$do_mgmt" -eq 1 ] && note "  $MGMT: down, then up"
+if [ -n "$plan_clients" ]; then
+	warn "these running clients go DARK while their zone bounces: $plan_clients"
+	note "(dark, never clear -- and they reconnect on their own when the zone returns)"
+fi
+printf 'Run the cycle? [y/N] '
+read -r answer || answer=n
+case "$answer" in
+	y | yes) ;;
+	*)
+		note "nothing restarted; when you do it by hand: fw and vpn qubes down, template down, fw qubes up"
+		exit 0
+		;;
+esac
+
+# -- the cycle: zones down (fw first, it depends on the vpn), mgmt down,
+# template down, then zones and mgmt back up. --force on the fw is what
+# lets it stop under running clients; the clients themselves are never
+# touched and re-attach when it returns. ------------------------------------
+
+for z in $plan_zones; do
+	vpn="sys-wgq-$z"
+	[ "$z" = wgq ] && vpn=sys-wgq
+	trace "-> qvm-shutdown --force --wait sys-fw-$z"
+	qvm-shutdown --force --wait "sys-fw-$z" || die "sys-fw-$z did not shut down; stopping here"
+	trace "-> qvm-shutdown --wait $vpn"
+	qvm-shutdown --wait "$vpn" || die "$vpn did not shut down; stopping here"
+done
+if [ "$do_mgmt" -eq 1 ]; then
+	trace "-> qvm-shutdown --wait $MGMT"
+	qvm-shutdown --wait "$MGMT" || die "$MGMT did not shut down; stopping here"
+fi
+if [ "$do_template" -eq 1 ]; then
+	trace "-> qvm-shutdown --wait $TEMPLATE"
+	qvm-shutdown --wait "$TEMPLATE" || die "$TEMPLATE did not shut down; zone qubes are halted -- start them with qvm-start when resolved"
+fi
+for z in $plan_zones; do
+	trace "-> qvm-start sys-fw-$z"
+	qvm-start "sys-fw-$z" || die "sys-fw-$z did not start; run: sudo wgq doctor"
+done
+if [ "$do_mgmt" -eq 1 ]; then
+	trace "-> qvm-start $MGMT"
+	qvm-start "$MGMT" || die "$MGMT did not start; run: sudo wgq doctor"
+fi
+
+ok "cycle complete; the running qubes are on the current template"
+note "prove it when convenient: sudo wgq doctor && sudo wgq verify${only:+ $only}"

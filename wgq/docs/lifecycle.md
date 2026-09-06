@@ -127,6 +127,11 @@ a guess is not — and per-zone verbs multi-select. Without a terminal
 the command refuses and lists the zones. `-z <zone>` works anywhere on
 the line, unchanged.
 
+After an update that changed the template, running wgq qubes keep the
+old code until restarted: `sudo wgq restart` offers the cycle — plan
+first, dark clients named, one confirmation, decline means you do it
+by hand. `sudo wgq restart <zone>` bounces one zone's pair.
+
 The tunnel connects at boot by default. Both halves are yours to drive:
 
 ```sh
