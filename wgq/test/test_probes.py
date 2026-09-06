@@ -115,6 +115,25 @@ class TestParseStun(unittest.TestCase):
         with self.assertRaises(ValueError):
             probes.parse_stun(self.binding_success(txid=b"\x02" * 12), self.TXID)
 
+    def test_rejects_a_lying_attribute_length_over_a_short_value(self):
+        data = self.binding_success()
+        # attribute claims 0xFFFF bytes; only 4 value bytes exist, so the
+        # 8-byte XOR-MAPPED payload can never be read -- no answer, not
+        # a crash. (A lying alen over a COMPLETE value parses: the slice
+        # truncates safely and all eight needed bytes are present.)
+        lying = data[:22] + struct.pack(">H", 0xFFFF) + data[24:28]
+        with self.assertRaises(ValueError):
+            probes.parse_stun(lying, self.TXID)
+
+    def test_rejects_wrong_message_type_and_cookie(self):
+        good = self.binding_success()
+        for bad in (
+            struct.pack(">H", 0x0111) + good[2:],  # error response
+            good[:4] + struct.pack(">I", 0xDEADBEEF) + good[8:],  # cookie
+        ):
+            with self.assertRaises(ValueError):
+                probes.parse_stun(bad, self.TXID)
+
     def test_rejects_response_without_the_attribute(self):
         bare = struct.pack(">HHI", 0x0101, 0, probes.STUN_COOKIE) + self.TXID
         with self.assertRaises(ValueError):

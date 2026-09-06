@@ -2,10 +2,16 @@
 
 ## Status of this code
 
-**wgq has never been run end to end, and has not been audited.** It is
-published so its reasoning can be checked. Read `README.md` before deciding
-whether it fits your threat model, and `DESIGN.md` for why each
-decision was made and which upstream source it came from.
+**wgq has not been audited.** It has been run end to end on real
+hardware by its one author, on one machine, against one provider — its
+kill test has caught real bugs, including its own — and that is the
+entire body of field evidence. Read `docs/threat-model.md` before
+deciding whether it fits your threat model, and `DESIGN.md` for why
+each decision was made and which upstream source it came from.
+
+Releases are signed tags. Verify against the maintainer key
+(fingerprint `B387 26F0 61C1 AE22 E287 5F90 57ED 9D12 966B 397C`,
+distribution channels in the repository root's `SECURITY.md`).
 
 ## Reporting
 
@@ -38,7 +44,8 @@ nowhere. Anything that breaks that is in scope:
 
 ## What is out of scope
 
-These are properties of the design, documented in `README.md`, not defects:
+These are properties of the design, documented in
+`docs/threat-model.md`, not defects:
 
 - **Your VPN provider sees your traffic.** This moves trust; it does not
   remove it.

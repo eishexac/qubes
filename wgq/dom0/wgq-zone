@@ -182,11 +182,14 @@ cmd_add() {
 	fi
 	note "creating $(vpn_name "$z") + sys-fw-$z via salt (can take a minute; report follows)..."
 	qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
-	# A newborn zone inherits the global settings from its first boot,
-	# not its first hand-tuning.
-	"$wgq_here/wgq-ctl" --zone "$z" materialize 2>/dev/null \
-		|| note "global settings will apply at the zone's first connect"
-	ok "zone $z is up ($(vpn_name "$z") + sys-fw-$z)"
+	# A newborn zone inherits the global settings from its first boot:
+	# once BEFORE the start so the boot flag exists when systemd reads
+	# it, once AFTER (below) so the resolver copy lands in the running
+	# qube. Failures are surfaced, not eaten -- with a global
+	# autoconnect off, a silently failed flag write would boot this
+	# zone connected against stored intent.
+	"$wgq_here/wgq-ctl" --zone "$z" materialize \
+		|| warn "settings did not materialize; before relying on the zone run: sudo wgq -z $z connect"
 
 	# Creation ends with the plumbing RUNNING: Qubes only assigns clients
 	# to a netvm that is up, so a zone left halted would refuse its first
@@ -195,6 +198,9 @@ cmd_add() {
 	note "starting sys-fw-$z (boots $(vpn_name "$z") behind it)..."
 	qvm-start --skip-if-running "sys-fw-$z" \
 		|| die "sys-fw-$z did not start; 'attach' will retry when you use it"
+	"$wgq_here/wgq-ctl" --zone "$z" materialize \
+		|| warn "settings did not materialize; before relying on the zone run: sudo wgq -z $z connect"
+	ok "zone $z is up ($(vpn_name "$z") + sys-fw-$z)"
 
 	for q in $attach_list; do
 		attach_qube "$z" "$q"

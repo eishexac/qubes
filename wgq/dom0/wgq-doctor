@@ -229,12 +229,19 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 
 	d_dns=$(qvm-features "$vpn" wgq.dns 2>/dev/null || :)
 	[ -n "$d_dns" ] || d_dns=$(qvm-features dom0 wgq.dns 2>/dev/null || :)
-	d_file=$(vpn_probe "$vpn" 'cat /rw/config/wg/dns 2>/dev/null' || :)
-	if [ "${d_dns:-}" != "${d_file:-}" ]; then
-		bad "$sect" "stored resolver ('${d_dns:-provider}') and dataplane copy ('${d_file:-provider}') differ" \
-			"sudo wgq -z $zone connect   (re-materializes the settings)"
-	elif [ -n "$d_dns" ]; then
-		row "$sect" "resolver override $d_dns materialized ok"
+	# Affirmative read: a failed probe must read as "could not check",
+	# never as drift -- convicting on an error is the dig bug's shape.
+	d_file=$(vpn_probe "$vpn" 'cat /rw/config/wg/dns 2>/dev/null || echo __none__' || :)
+	if [ -z "$d_file" ]; then
+		row "$sect" "could not check the resolver copy ($vpn gave no answer); re-run doctor"
+	else
+		[ "$d_file" = __none__ ] && d_file=''
+		if [ "${d_dns:-}" != "${d_file:-}" ]; then
+			bad "$sect" "stored resolver ('${d_dns:-provider}') and dataplane copy ('${d_file:-provider}') differ" \
+				"sudo wgq -z $zone connect   (re-materializes the settings)"
+		elif [ -n "$d_dns" ]; then
+			row "$sect" "resolver override $d_dns materialized ok"
+		fi
 	fi
 done
 [ "$zones" -gt 0 ] || row zones "none exist; create one with: sudo wgq zone add <zone>"

@@ -4,7 +4,7 @@ Read every file before it enters dom0. There are three, and they are all
 text: two Salt states and two lines of qrexec policy.
 
 The short path: in a disposable, verify and pin the signed release
-(`gpg --locate-keys hexac@existin.space`, check the fingerprint against
+(`gpg --locate-keys hexac@existin.space`, check the fingerprint against the repository root's
 SECURITY.md, `git verify-tag wgq-v0.1.0 && git checkout wgq-v0.1.0` —
 see the collection README), run `sh bootstrap.sh wgq` at the repository
 root, then `airlock pull` and `airlock apply wgq` in dom0. The steps

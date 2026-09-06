@@ -40,8 +40,6 @@ behind it have no effect.
 
 ---
 
----
-
 ## Identity and ownership
 
 **Identity.** wgq qubes wear their own Qubes labels — `wgq` (red, like

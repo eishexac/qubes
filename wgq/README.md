@@ -76,8 +76,6 @@ Direction settled, not yet built:
 
 ---
 
----
-
 ## Quickstart
 
 Install through the airlock ([docs/install.md](docs/install.md)), then
