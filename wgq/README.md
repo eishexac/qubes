@@ -357,6 +357,30 @@ sudo wgq verify --kill-rounds 3
 sudo wgq doctor
 ```
 
+### Connection lifecycle
+
+The tunnel connects at boot by default. Both halves are yours to drive:
+
+```sh
+sudo wgq -z work disconnect          # zone goes DARK -- kill switch stays,
+                                     # clients get nothing, never clear traffic
+sudo wgq -z work connect             # tunnel up again, state read back
+sudo wgq -z work set autoconnect off # boot sealed; configure first, then connect
+sudo wgq -z work set dns 10.64.0.1   # pin client DNS to a chosen resolver
+sudo wgq -z work get                 # the zone's settings and tunnel state
+```
+
+`disconnect` is a pause button, not a bypass: the kill switch is
+installed by the firewall script regardless of tunnel state. With
+autoconnect off the zone boots exactly like an unconfigured qube --
+sealed, forwarding refused -- until an explicit `connect`.
+
+A custom resolver is reached *through the tunnel*: if it does not
+answer there, clients get no DNS rather than a leak, and an unusable
+override falls back to the provider pin, never to no pin. An
+off-provider resolver is a fingerprinting and trust trade-off; the
+provider default avoids it.
+
 The only qubes whose netvm ever changes are the ones you typed — there is
 no discovery and no "all"; a sweep of "networked qubes" would eventually
 rewire plumbing it does not understand. `add` asks exactly one question

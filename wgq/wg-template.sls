@@ -178,18 +178,38 @@ wgq-packages:
     - group: root
     - mode: '0644'
 
+/etc/systemd/system/wg-autoconnect.service:
+  file.managed:
+    - source: salt://wgq/template/etc/systemd/system/wg-autoconnect.service
+    - user: root
+    - group: root
+    - mode: '0644'
+
 wgq-systemd-reload:
   cmd.run:
     - name: systemctl daemon-reload
     - onchanges:
       - file: /etc/systemd/system/wg-tunnel.service
+      - file: /etc/systemd/system/wg-autoconnect.service
 
 # Enabled in the TEMPLATE, not in the qube: /etc is restored from the
 # template on every AppVM boot, so `systemctl enable` inside a qube is lost.
 # The unit no-ops in qubes without /rw/config/wg, so enabling it here is
 # harmless for sys-fw-<zone> and any other qube on this template.
-wg-tunnel.service:
+#
+# It is wg-AUTOCONNECT that boots enabled; wg-tunnel itself is manual
+# (started by autoconnect at boot, by `wgq connect` afterwards). The
+# explicit disable removes the enablement symlink older installs left
+# behind -- without it, upgraded templates would start the tunnel twice
+# over and the autoconnect-off flag would have no effect.
+wg-autoconnect.service:
   service.enabled:
+    - require:
+      - file: /etc/systemd/system/wg-autoconnect.service
+      - cmd: wgq-systemd-reload
+
+wg-tunnel.service:
+  service.disabled:
     - require:
       - file: /etc/systemd/system/wg-tunnel.service
       - cmd: wgq-systemd-reload

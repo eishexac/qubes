@@ -127,8 +127,42 @@ case "$verb" in
 esac
 EOF
 
+cat >"$WORK/bin/qvm-run" <<'EOF'
+#!/bin/sh
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-u) shift 2 ;;
+		--no-gui | --pass-io | --) shift ;;
+		*) break ;;
+	esac
+done
+name=$1
+shift
+printf 'run %s: %s\n' "$name" "$*" >> "${QCTL_LOG:?}"
+case "$*" in
+	*"cat /run/wgq/state"*) printf 'ok peer=se-mma dns=10.64.0.1\n' ;;
+	*"cat /rw/config/wg/dns"*) exit 1 ;;
+esac
+EOF
+
+cat >"$WORK/bin/qvm-features" <<'EOF'
+#!/bin/sh
+unset_flag=0
+[ "$1" = --unset ] && { unset_flag=1; shift; }
+name=$1 feat=$2
+if [ "$unset_flag" -eq 1 ]; then
+	grep -v "^$name|$feat|" "${FEATS:?}" > "$FEATS.tmp" 2>/dev/null || :
+	mv "$FEATS.tmp" "$FEATS"
+elif [ $# -ge 3 ]; then
+	printf '%s|%s|%s\n' "$name" "$feat" "$3" >> "${FEATS:?}"
+else
+	awk -F'|' -v n="$name" -v f="$feat" '$1 == n && $2 == f {print $3}' "${FEATS:?}"
+fi
+EOF
+
 chmod +x "$WORK/bin/"*
-export FAKEQ="$WORK/qubes" QCTL_LOG="$WORK/qctl.log" RUNNING="$WORK/running" TAGS="$WORK/tags"
+export FAKEQ="$WORK/qubes" QCTL_LOG="$WORK/qctl.log" RUNNING="$WORK/running" TAGS="$WORK/tags" FEATS="$WORK/features"
+: >"$WORK/features"
 : >"$TAGS"
 : >"$QCTL_LOG"
 printf 'sys-net\nsys-firewall\n' >"$RUNNING"
@@ -341,6 +375,63 @@ else
 	fail "doctor failed the broken chain for the wrong reason"
 fi
 env PATH="$WORK/bin:$PATH" qvm-prefs sys-fw-work netvm sys-wgq-work
+
+# 11a4. The connection lifecycle. connect drives systemctl start in the
+# zone qube and reads the state back; disconnect stops it and SAYS the
+# zone is dark -- the kill-switch-stays framing is part of the contract.
+CTL=$(cd "$(dirname "$0")/.." && pwd)/wgq/dom0/wgq-ctl
+ctl() { env PATH="$WORK/bin:$PATH" sh "$CTL" "$@"; }
+if ctl --zone work connect >"$WORK/out" 2>&1 \
+	&& grep -q 'run sys-wgq-work: systemctl start wg-tunnel' "$QCTL_LOG" \
+	&& grep -q 'zone work connected (ok peer=se-mma' "$WORK/out"; then
+	ok "connect starts the tunnel and proves the state"
+else
+	cat "$WORK/out"
+	fail "connect did not drive and verify the tunnel"
+fi
+if ctl --zone work disconnect >"$WORK/out" 2>&1 \
+	&& grep -q 'run sys-wgq-work: systemctl stop wg-tunnel' "$QCTL_LOG" \
+	&& grep -q 'dark' "$WORK/out" && grep -q 'kill switch holds' "$WORK/out"; then
+	ok "disconnect stops the tunnel and says dark, not clear"
+else
+	cat "$WORK/out"
+	fail "disconnect lost the darkness contract"
+fi
+
+# 11a5. Settings: autoconnect off is a per-qube service feature (visible,
+# persistent, dom0-set); on removes it; a bogus dns value is refused
+# before anything reaches the qube.
+if ctl --zone work set autoconnect off >"$WORK/out" 2>&1 \
+	&& grep -q 'sys-wgq-work|service.wgq-no-autoconnect|1' "$WORK/features" \
+	&& ctl --zone work get 2>/dev/null | grep -q 'autoconnect: off' \
+	&& ctl --zone work set autoconnect on >/dev/null 2>&1 \
+	&& ! grep -q 'wgq-no-autoconnect' "$WORK/features"; then
+	ok "autoconnect off/on writes and clears the service feature"
+else
+	cat "$WORK/out"
+	fail "autoconnect setting did not land in qvm-features"
+fi
+cp "$QCTL_LOG" "$WORK/qctl.before"
+if ctl --zone work set dns 999.1.2.3 >"$WORK/out" 2>&1; then
+	fail "a bogus resolver address was accepted"
+elif grep -q 'not an IPv4 address' "$WORK/out" && cmp -s "$QCTL_LOG" "$WORK/qctl.before"; then
+	ok "a bogus resolver is refused before touching the qube"
+else
+	cat "$WORK/out"
+	fail "bogus resolver refused for the wrong reason"
+fi
+
+# 11a6. The ownership rule holds for the lifecycle verbs too.
+printf 'sys-wgq-alien|AppVM|sys-firewall|True\n' >>"$FAKEQ"
+if ctl --zone alien connect >"$WORK/out" 2>&1; then
+	fail "connect drove a foreign qube's tunnel"
+elif grep -q 'not created by wgq' "$WORK/out"; then
+	ok "a foreign lookalike zone is refused by connect"
+else
+	cat "$WORK/out"
+	fail "foreign zone refused for the wrong reason"
+fi
+grep -v '^sys-wgq-alien|' "$FAKEQ" >"$FAKEQ.tmp" && mv "$FAKEQ.tmp" "$FAKEQ"
 
 # 11b. list --json emits one parseable document with the zone rows, and
 # the foreign-qube note stays on stderr where a parser never sees it.
