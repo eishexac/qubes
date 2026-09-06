@@ -7,12 +7,12 @@ identity zone, with an endpoint allowlist enforced outside the qube it
 constrains.
 
 > [!WARNING]
-> **This has never been run.** Not once, end to end, on any machine.
->
-> It is public so the reasoning can be checked, not because it is ready to
-> protect anyone. Do not make it your only defence against a VPN leak. If you
-> need something to rely on today, use [Solene's forum guide][solene] — the
-> best-tested community reference for 4.2 and 4.3.
+> **Young software, one machine of history.** It has been run end to end
+> on real hardware (see Status), and its kill test has caught real bugs —
+> but that is one author, one machine, one provider. Do not make it your
+> only defence against a VPN leak yet. If you need the battle-tested
+> path today, use [Solene's forum guide][solene] — the best-tested
+> community reference for 4.2 and 4.3.
 
 [solene]: https://forum.qubes-os.org/t/wireguard-vpn-setup-4-2-and-4-3/19141
 
