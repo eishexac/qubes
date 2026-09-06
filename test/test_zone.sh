@@ -110,6 +110,7 @@ EOF
 
 cat >"$WORK/bin/qvm-shutdown" <<'EOF'
 #!/bin/sh
+printf 'shutdown %s\n' "$*" >> "${QCTL_LOG:?}"
 for a in "$@"; do
 	case "$a" in
 		-*) ;;
@@ -522,6 +523,42 @@ else
 	fail "foreign zone refused for the wrong reason"
 fi
 grep -v '^sys-wgq-alien|' "$FAKEQ" >"$FAKEQ.tmp" && mv "$FAKEQ.tmp" "$FAKEQ"
+
+# 11a7. The restart cycle: plan first, clients named as going dark, one
+# confirmation; fw down (forced, it stops under clients), vpn down,
+# mgmt down, template down, fw and mgmt back up -- template stays
+# halted. Declining runs nothing.
+RESTART=$(cd "$(dirname "$0")/.." && pwd)/wgq/dom0/wgq-restart
+printf 'debian-13-wgq|TemplateVM|-|False\nwgq-mgmt|AppVM|sys-firewall|False\n' >>"$FAKEQ"
+printf 'wgq-mgmt|created-by-wgq\n' >>"$TAGS"
+printf 'debian-13-wgq\nwgq-mgmt\nwork\n' >>"$RUNNING"
+env PATH="$WORK/bin:$PATH" qvm-prefs work netvm sys-fw-work
+cp "$QCTL_LOG" "$WORK/qctl.rst"
+if printf 'n\n' | env PATH="$WORK/bin:$PATH" sh "$RESTART" >"$WORK/out" 2>&1 \
+	&& grep -q 'DARK' "$WORK/out" && grep -q 'work' "$WORK/out" \
+	&& cmp -s "$QCTL_LOG" "$WORK/qctl.rst"; then
+	ok "restart declined runs nothing, after naming the dark clients"
+else
+	cat "$WORK/out"
+	fail "restart declined still moved something"
+fi
+if printf 'y\n' | env PATH="$WORK/bin:$PATH" sh "$RESTART" >"$WORK/out" 2>&1 \
+	&& grep -q 'shutdown --force --wait sys-fw-work' "$QCTL_LOG" \
+	&& grep -q 'shutdown --wait sys-wgq-work' "$QCTL_LOG" \
+	&& grep -q 'shutdown --wait wgq-mgmt' "$QCTL_LOG" \
+	&& grep -q 'shutdown --wait debian-13-wgq' "$QCTL_LOG" \
+	&& grep -q 'started sys-fw-work' "$QCTL_LOG" \
+	&& grep -q 'started wgq-mgmt' "$QCTL_LOG" \
+	&& ! grep -qx 'debian-13-wgq' "$RUNNING" \
+	&& grep -qx 'sys-fw-work' "$RUNNING"; then
+	ok "restart cycles zones, mgmt and template; template stays halted"
+else
+	cat "$WORK/out"
+	tail -8 "$QCTL_LOG"
+	fail "the restart cycle went wrong"
+fi
+env PATH="$WORK/bin:$PATH" qvm-prefs work netvm sys-firewall
+grep -vE '^(debian-13-wgq|wgq-mgmt)\|' "$FAKEQ" >"$FAKEQ.tmp" && mv "$FAKEQ.tmp" "$FAKEQ"
 
 # 11b. list --json emits one parseable document with at least the zone
 # rows this harness created -- an empty [] must not pass.
