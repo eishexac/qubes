@@ -50,6 +50,7 @@ case "${1:-}" in
 		;;
 esac
 case "$zone" in
+	-) ;; # the no-zone sentinel, validated against the verb below
 	'' | *[!a-z0-9-]* | -*) die "unusable zone name '$zone'" ;;
 esac
 vpn="sys-wgq-$zone"
@@ -59,7 +60,15 @@ vpn="sys-wgq-$zone"
 verb=$1
 shift
 
-qvm-check --quiet "$vpn" 2>/dev/null || die "zone '$zone' does not exist"
+# `--zone -` means "no zone context": legal ONLY for the global layer,
+# where the write lands on dom0 and fans out -- there is no single
+# subject qube to check. Everything else needs a real zone.
+if [ "$zone" = - ]; then
+	{ [ "$verb" = set ] && [ "${1:-}" = --global ]; } \
+		|| die "a zone is required for '$verb' (only 'set --global' works without one)"
+else
+	qvm-check --quiet "$vpn" 2>/dev/null || die "zone '$zone' does not exist"
+fi
 
 is_ours() {
 	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
@@ -68,7 +77,7 @@ is_ours() {
 	esac
 	return 1
 }
-is_ours "$vpn" || die "$vpn was not created by wgq; refusing to drive it"
+[ "$zone" = - ] || is_ours "$vpn" || die "$vpn was not created by wgq; refusing to drive it"
 
 # --no-autostart everywhere: only `connect` may bring the qube up, and
 # it does so explicitly. A status read or a disconnect that BOOTS the

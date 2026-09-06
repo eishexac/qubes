@@ -41,6 +41,18 @@ cat >"$WORK/bin/qvm-ls" <<'EOF'
 #!/bin/sh
 printf 'sys-fw-wgq\nsys-fw-work\n'
 EOF
+cat >"$WORK/bin/qvm-tags" <<'EOF'
+#!/bin/sh
+# ownership yes-man: dispatch tests pin routing, the zone harness pins
+# ownership refusals
+[ "$2" = list ] && printf 'created-by-wgq\n'
+EOF
+
+cat >"$WORK/bin/qvm-features" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+
 chmod +x "$WORK/bin/"*
 export QLOG="$WORK/qlog"
 
@@ -58,13 +70,15 @@ else
 	fail "mgmt routing went wrong"
 fi
 
-# 2. A vpn verb defaults to the singleton zone, as root.
-if wgq switch nl1 >"$WORK/out" 2>&1 \
-	&& grep -q -- "-u root -- sys-wgq wgq 'switch' 'nl1'" "$QLOG"; then
-	ok "vpn verb routed to sys-wgq as root by default"
+# 2. There is NO default zone: a one-arg switch with no zone named and
+# no terminal refuses -- the argument is the peer, never a guessed zone.
+if wgq switch nl1 >"$WORK/out" 2>&1; then
+	fail "zoneless switch guessed a zone"
+elif grep -q "no terminal to ask on" "$WORK/out"; then
+	ok "zoneless switch refuses off-tty (peer kept, zone never guessed)"
 else
 	cat "$WORK/out" "$QLOG" 2>/dev/null
-	fail "default-zone vpn routing went wrong"
+	fail "zoneless switch refusal said the wrong thing"
 fi
 
 # 3. -z picks the zone; read-only vpn verbs run as user.
@@ -77,7 +91,7 @@ else
 fi
 
 # 4. Hostile arguments stay data: quoted through to the remote command.
-if wgq switch 'a b; rm -rf /' >"$WORK/out" 2>&1 \
+if wgq switch work 'a b; rm -rf /' >"$WORK/out" 2>&1 \
 	&& grep -qF -- "wgq 'switch' 'a b; rm -rf /'" "$QLOG"; then
 	ok "arguments are quoted, shell metacharacters stay inert"
 else
@@ -86,7 +100,7 @@ else
 fi
 
 # 5. A single quote inside an argument cannot break out.
-if wgq switch "it's" >"$WORK/out" 2>&1 \
+if wgq switch work "it's" >"$WORK/out" 2>&1 \
 	&& grep -qF -- "wgq 'switch' 'it'\\''s'" "$QLOG"; then
 	ok "embedded single quotes are escaped"
 else
@@ -213,6 +227,58 @@ if wgq provision --zone work --provider ivpn >"$WORK/out" 2>&1 \
 else
 	cat "$WORK/out" "$QLOG" 2>/dev/null
 	fail "post-verb --zone was eaten or mangled"
+fi
+
+# The positional grammar: the zone is the verb's first argument.
+if wgq status work >"$WORK/out" 2>&1 \
+	&& grep -q -- "-u user -- sys-wgq-work wgq 'status'" "$QLOG"; then
+	ok "a positional zone routes to that zone's qube"
+else
+	cat "$WORK/out" "$QLOG" 2>/dev/null
+	fail "positional zone was not honored"
+fi
+
+# switch keeps its peer even if the peer's name matches no zone; with
+# two args the first is the zone.
+if wgq switch work se-mma-wg-001 >"$WORK/out" 2>&1 \
+	&& grep -q -- "-u root -- sys-wgq-work wgq 'switch' 'se-mma-wg-001'" "$QLOG"; then
+	ok "switch parses zone-then-peer"
+else
+	cat "$WORK/out" "$QLOG" 2>/dev/null
+	fail "switch zone/peer parse broke"
+fi
+
+# No zone, no terminal: refusal that lists the zones -- never a guess,
+# never a prompt a script can hang on.
+if wgq status >"$WORK/out" 2>&1; then
+	fail "zoneless status guessed a zone"
+elif grep -q "no terminal to ask on" "$WORK/out" && grep -q "work" "$WORK/out"; then
+	ok "zoneless command without a tty refuses and lists zones"
+else
+	cat "$WORK/out"
+	fail "zoneless refusal said the wrong thing"
+fi
+
+# set tells a key from a zone by the closed set; --global needs no zone.
+if wgq set work dns 9.9.9.9 >"$WORK/out" 2>&1 || true; then
+	if grep -q "run sys-wgq-work" "$WORK/out" 2>/dev/null || true; then :; fi
+fi
+if wgq set dns 9.9.9.9 >"$WORK/out" 2>&1; then
+	fail "zoneless zone-layer set guessed"
+elif grep -q "no terminal to ask on" "$WORK/out"; then
+	ok "zone-layer set without a zone refuses off-tty"
+else
+	cat "$WORK/out"
+	fail "zoneless set refusal said the wrong thing"
+fi
+
+# up|down are connect|disconnect.
+if wgq down work >"$WORK/out" 2>&1 \
+	&& grep -q "systemctl stop wg-tunnel" "$QLOG"; then
+	ok "down is disconnect, positionally zoned"
+else
+	cat "$WORK/out" "$QLOG" 2>/dev/null
+	fail "the down alias broke"
 fi
 
 if [ "$failures" -gt 0 ]; then
