@@ -182,6 +182,10 @@ cmd_add() {
 	fi
 	note "creating $(vpn_name "$z") + sys-fw-$z via salt (can take a minute; report follows)..."
 	qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
+	# A newborn zone inherits the global settings from its first boot,
+	# not its first hand-tuning.
+	"$wgq_here/wgq-ctl" --zone "$z" materialize 2>/dev/null \
+		|| note "global settings will apply at the zone's first connect"
 	ok "zone $z is up ($(vpn_name "$z") + sys-fw-$z)"
 
 	# Creation ends with the plumbing RUNNING: Qubes only assigns clients

@@ -367,8 +367,16 @@ sudo wgq -z work disconnect          # zone goes DARK -- kill switch stays,
 sudo wgq -z work connect             # tunnel up again, state read back
 sudo wgq -z work set autoconnect off # boot sealed; configure first, then connect
 sudo wgq -z work set dns 10.64.0.1   # pin client DNS to a chosen resolver
-sudo wgq -z work get                 # the zone's settings and tunnel state
+sudo wgq set --global dns 10.64.0.1  # default for every zone without its own
+sudo wgq -z work get                 # settings (with the layer that answered)
 ```
+
+Settings are layered: a zone override beats a global default beats the
+built-in default, and `get` names the layer every value came from. The
+stored settings (qubes features, on the zone qube or dom0) are the
+truth; what the dataplane reads is a copy pushed at `set` and
+`connect`, and `wgq doctor` fails when the two drift. A newborn zone
+inherits the globals from its first boot.
 
 `disconnect` is a pause button, not a bypass: the kill switch is
 installed by the firewall script regardless of tunnel state. With

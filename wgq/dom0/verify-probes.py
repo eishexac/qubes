@@ -159,6 +159,51 @@ def tcp_roundtrip(ip: str, port: int) -> bool:
         return True
 
 
+STUN_COOKIE = 0x2112A442
+
+
+def parse_stun(data: bytes, txid: bytes) -> tuple[str, int]:
+    """XOR-MAPPED-ADDRESS out of a binding success, or ValueError."""
+    if len(data) < 20:
+        raise ValueError("short response")
+    mtype, mlen, cookie = struct.unpack(">HHI", data[:8])
+    if mtype != 0x0101 or cookie != STUN_COOKIE or data[8:20] != txid:
+        raise ValueError("not our binding success")
+    off = 20
+    end = min(len(data), 20 + mlen)
+    while off + 4 <= end:
+        atype, alen = struct.unpack(">HH", data[off : off + 4])
+        value = data[off + 4 : off + 4 + alen]
+        off += 4 + alen + ((4 - alen % 4) % 4)  # attributes pad to 32 bits
+        if atype == 0x0020 and len(value) >= 8 and value[1] == 0x01:  # IPv4
+            port = struct.unpack(">H", value[2:4])[0] ^ (STUN_COOKIE >> 16)
+            raw = struct.unpack(">I", value[4:8])[0] ^ STUN_COOKIE
+            return socket.inet_ntoa(struct.pack(">I", raw)), port
+    raise ValueError("no XOR-MAPPED-ADDRESS")
+
+
+def stun_probe(host: str = "stun.cloudflare.com", port: int = 3478) -> dict:
+    """The WebRTC question at the layer we control: what public address
+    does a STUN server see our UDP arrive from? With the tunnel up this
+    must be the exit -- it exercises the UDP egress path, which the
+    HTTPS exit check does not."""
+    import os
+
+    txid = os.urandom(12)
+    request = struct.pack(">HHI", 0x0001, 0, STUN_COOKIE) + txid
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(TIMEOUT)
+    try:
+        sock.sendto(request, (host, port))
+        data, _ = sock.recvfrom(2048)
+        ip, sport = parse_stun(data, txid)
+        return {"ok": True, "ip": ip, "port": sport}
+    except (OSError, ValueError) as exc:
+        return {"ok": False, "error": str(exc)}
+    finally:
+        sock.close()
+
+
 def exit_ip() -> dict:
     try:
         with urllib.request.urlopen("https://ifconfig.me/ip", timeout=TIMEOUT) as resp:
@@ -215,6 +260,8 @@ def main(argv: list[str]) -> int:
     mode, rest = argv[0], argv[1:]
     if mode == "exitip":
         result = exit_ip()
+    elif mode == "stun":
+        result = stun_probe(*rest[:1], *[int(p) for p in rest[1:2]])
     elif mode == "dnscheck":
         result = mode_dnscheck(rest)
     elif mode == "killcheck":
