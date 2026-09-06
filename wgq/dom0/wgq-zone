@@ -30,7 +30,7 @@ set -eu
 PROG=${WGQ_PROG:-${0##*/}}
 
 usage() {
-	printf 'usage: %s add <zone> [--upstream <netvm>] [--attach <qube>[,<qube>...]]...\n' "$PROG" >&2
+	printf 'usage: %s add <zone> [--color <c>] [--upstream <netvm>] [--attach <qube>,...]\n' "$PROG" >&2
 	printf '       %s attach <zone> <qube>\n' "$PROG" >&2
 	printf '       %s detach <qube> [netvm]\n' "$PROG" >&2
 	printf '       %s list\n' "$PROG" >&2
@@ -155,6 +155,11 @@ cmd_add() {
 	z=$1
 	shift
 	check_zone "$z"
+	case "$z" in
+		blue | orange | purple | cyan | magenta | green | yellow | teal | pink | red | gray | brown)
+			die "'$z' is a palette colour and cannot name a zone"
+			;;
+	esac
 	if [ "$z" = wgq ]; then
 		# The reserved zone can no longer be BORN; an existing one (an
 		# install from before 0.3.0) may still converge while its owner
@@ -165,8 +170,14 @@ cmd_add() {
 	fi
 	upstream=""
 	attach_list=""
+	colour=""
 	while [ $# -gt 0 ]; do
 		case "$1" in
+			--color | --colour)
+				[ $# -ge 2 ] || usage
+				colour=$2
+				shift 2
+				;;
 			--upstream)
 				[ $# -ge 2 ] || usage
 				check_qube_name "$2"
@@ -184,6 +195,31 @@ cmd_add() {
 		esac
 	done
 
+	# The zone's console colour: picked, or the first free one. Stored
+	# as a feature on the VPN qube once it exists (below); uniqueness is
+	# read from the features of the zones that already exist, so removal
+	# frees a colour and rename carries it (clone copies features).
+	used_colours=$(for uc_fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
+		is_ours "$uc_fw" || continue
+		uc_vpn="sys-wgq-${uc_fw#sys-fw-}"
+		[ "${uc_fw#sys-fw-}" = wgq ] && uc_vpn=sys-wgq
+		qvm-features "$uc_vpn" wgq.color 2>/dev/null || :
+	done)
+	if [ -n "$colour" ]; then
+		zone_colour_code "$colour" >/dev/null 2>&1 \
+			|| die "unknown colour '$colour'; the palette: $ZONE_PALETTE"
+		if printf '%s\n' "$used_colours" | grep -qx "$colour"; then
+			die "colour '$colour' is already worn by another zone; free: $(for c in $ZONE_PALETTE; do printf '%s\n' "$used_colours" | grep -qx "$c" || printf '%s ' "$c"; done)"
+		fi
+	else
+		for c in $ZONE_PALETTE; do
+			printf '%s\n' "$used_colours" | grep -qx "$c" && continue
+			colour=$c
+			break
+		done
+		[ -n "$colour" ] || note "the palette is spent; zone '$z' stays unpainted"
+	fi
+
 	pillar="{\"wgq\": {\"zone\": \"$z\"}}"
 	if [ -n "$upstream" ]; then
 		qvm-check --quiet "$upstream" 2>/dev/null || die "no such upstream netvm '$upstream'"
@@ -191,6 +227,12 @@ cmd_add() {
 	fi
 	note "creating $(vpn_name "$z") + sys-fw-$z via salt (can take a minute; report follows)..."
 	qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
+	if [ -n "$colour" ]; then
+		qvm-features "$(vpn_name "$z")" wgq.color "$colour" \
+			|| warn "could not store the colour; re-run: $PROG add $z --color $colour"
+		note "zone $z wears $(paint_to 2 "$colour" "$colour")"
+	fi
+
 	# A newborn zone inherits the global settings from its first boot:
 	# once BEFORE the start so the boot flag exists when systemd reads
 	# it, once AFTER (below) so the resolver copy lands in the running
@@ -323,16 +365,19 @@ cmd_list() {
 		lz=${fw#sys-fw-}
 		clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
 			| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
+		l_colour=$(qvm-features "$(vpn_name "$lz")" wgq.color 2>/dev/null || :)
 		if [ "$l_json" -eq 1 ]; then
 			l_clients=''
 			for c in $clients; do
 				l_clients="${l_clients:+$l_clients, }\"$c\""
 			done
-			l_row=$(printf '{"zone": "%s", "vpn": "%s", "fw": "%s", "clients": [%s]}' \
-				"$lz" "$(vpn_name "$lz")" "$fw" "$l_clients")
+			l_row=$(printf '{"zone": "%s", "vpn": "%s", "fw": "%s", "color": "%s", "clients": [%s]}' \
+				"$lz" "$(vpn_name "$lz")" "$fw" "$l_colour" "$l_clients")
 			l_out="${l_out:+$l_out, }$l_row"
 		else
-			printf '%-21s  vpn=%s  clients: %s\n' "$lz" "$(vpn_name "$lz")" "${clients:-none}"
+			printf '%s  vpn=%s  clients: %s\n' \
+				"$(paint_to 1 "$l_colour" "$(printf '%-21s' "$lz")")" \
+				"$(vpn_name "$lz")" "${clients:-none}"
 		fi
 	done
 	[ "$l_json" -eq 1 ] && printf '[%s]\n' "$l_out"

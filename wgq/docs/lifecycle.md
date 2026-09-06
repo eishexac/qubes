@@ -81,7 +81,13 @@ sudo wgq zone add <zone> [--upstream <netvm>] [--attach <qube>[,<qube>...]]...
 sudo wgq zone attach <zone> <qube>    sudo wgq zone detach <qube> [netvm]
 sudo wgq zone list                    sudo wgq zone remove <zone>
 sudo wgq zone rename <old> <new>
+sudo wgq zone add media --color blue
 ```
+
+Each zone wears a console colour — picked with `--color`, or the first
+free one from the 12-colour palette — unique across zones, painting the
+zone's name in `zone list` and the picker. Pipes and `NO_COLOR` never
+see an escape code.
 
 `rename` migrates a zone under a new name — clone, retag, rewire
 (clients follow), remove the old pair, converge. The zone is dark for
