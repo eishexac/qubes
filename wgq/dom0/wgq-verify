@@ -153,14 +153,14 @@ report() { # report <PASS|FAIL|SKIP> <n> <text>
 state=$(vpn_root 'cat /run/wgq/state' || :)
 case "$state" in
 	ok\ peer=*) ;;
-	*) die "zone '$zone' firewall state is '${state:-unknown}'; bring the tunnel up first (sudo wgq switch)" ;;
+	*) die "zone '$zone' firewall state is '${state:-unknown}'; bring the tunnel up first: sudo wgq -z $zone connect (no peer yet? sudo wgq switch)" ;;
 esac
 resolver=${state##*dns=}
 
 endpoint=$(vpn_root 'wg show wg0 endpoints' | awk 'NR==1 {print $2}' || :)
 case "$endpoint" in
 	*.*.*.*:*) ;;
-	*) die "no live endpoint on $vpnq (wg show gave '${endpoint:-nothing}'); run sudo wgq switch first" ;;
+	*) die "no live endpoint on $vpnq (wg show gave '${endpoint:-nothing}'); bring the tunnel up: sudo wgq -z $zone connect (no peer yet? sudo wgq switch)" ;;
 esac
 ep_ip=${endpoint%:*}
 ep_port=${endpoint##*:}
