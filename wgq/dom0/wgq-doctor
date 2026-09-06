@@ -1,0 +1,203 @@
+#!/bin/sh
+#
+# wgq-doctor - every invariant the debugging sessions checked by hand,
+# checked mechanically, read-only, with a fix command on every failure.
+#
+#     sudo wgq doctor
+#
+# Three days of hardware bring-up were spent hand-verifying the same
+# facts over and over: icons on disk, policies present, tags stamped,
+# the chain wired client -> sys-fw -> sys-wgq, the kill switch landed,
+# the accel fast path absent. Every one is mechanically checkable, so
+# this command checks them all. It never mutates anything: doctor
+# diagnoses, the printed fix commands (and the converge) heal.
+#
+# Exit status: 0 when nothing failed. Notes and skipped probes (a
+# halted qube cannot be probed) do not fail the run; broken invariants
+# do.
+
+set -eu
+
+PROG=${WGQ_PROG:-${0##*/}}
+case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
+# shellcheck source=dom0/msg.sh
+. "$wgq_here/msg.sh"
+
+# Fixed install locations, overridable only for the test harness.
+ICON_DIR=${WGQ_ICON_DIR:-/usr/share/icons/hicolor/scalable/apps}
+POLICY_DIR=${WGQ_POLICY_DIR:-/etc/qubes/policy.d}
+SALT_DIR=${WGQ_SALT_DIR:-/srv/salt/wgq}
+ENTRY=${WGQ_ENTRY:-/usr/local/bin/wgq}
+TEMPLATE=${WGQ_TEMPLATE:-debian-13-wgq}
+
+failed=0
+row() { # row <section> <text>
+	printf '%-10s %s\n' "$1" "$2"
+}
+bad() { # bad <section> <text> <fix command>
+	failed=$((failed + 1))
+	printf '%-10s FAIL: %s\n' "$1" "$2"
+	printf '%-10s fix:  %s\n' '' "$3"
+}
+
+is_ours() {
+	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
+	case "$(qvm-prefs "$1" label 2>/dev/null)" in
+		wgq | wgq-fw | wgq-mgmt | wgq-tpl) return 0 ;;
+	esac
+	return 1
+}
+
+# The zone qube may be probed only when it is running AND qvm-run is
+# available; anything else is a skip, never a guess.
+vpn_probe() { # vpn_probe <qube> <command>
+	command -v qvm-run >/dev/null 2>&1 || return 9
+	qvm-run --no-gui --pass-io -u root -- "$1" "$2" 2>/dev/null
+}
+
+# -- identity: what the install put on disk ---------------------------------
+
+icons_present=0
+icons_total=0
+for icon in appvm-wgq appvm-wgq-fw appvm-wgq-mgmt \
+	servicevm-wgq servicevm-wgq-fw templatevm-wgq-tpl; do
+	icons_total=$((icons_total + 1))
+	[ -f "$ICON_DIR/$icon.svg" ] && icons_present=$((icons_present + 1))
+done
+if [ "$icons_present" -eq "$icons_total" ]; then
+	row identity "icons $icons_present/$icons_total ok"
+else
+	bad identity "icons $icons_present/$icons_total in $ICON_DIR" \
+		"sudo qubesctl --show-output state.apply wgq.wg-icons"
+fi
+
+policies_present=0
+policies_total=0
+for pol in 30-wgq 30-wgq-labels 30-wgq-creation; do
+	policies_total=$((policies_total + 1))
+	[ -f "$POLICY_DIR/$pol.policy" ] && policies_present=$((policies_present + 1))
+done
+if [ "$policies_present" -eq "$policies_total" ]; then
+	row identity "policies $policies_present/$policies_total ok"
+else
+	bad identity "policies $policies_present/$policies_total in $POLICY_DIR" \
+		"sudo airlock apply wgq"
+fi
+
+if [ -d "$SALT_DIR" ] && [ -e "$ENTRY" ]; then
+	row tree "$SALT_DIR present, $ENTRY wired ok"
+elif [ ! -d "$SALT_DIR" ]; then
+	bad tree "no reviewed tree at $SALT_DIR" \
+		"sudo airlock pull <qube> wgq <repo> && sudo airlock apply wgq"
+else
+	bad tree "$ENTRY missing or dangling" "sudo airlock apply wgq"
+fi
+
+# -- ownership: everything wearing our names is ours ------------------------
+
+for qube in $(qvm-ls --raw-data --fields name 2>/dev/null \
+	| grep -E '^(sys-wgq|sys-fw-|wgq-mgmt$)' || true); do
+	if is_ours "$qube"; then
+		row ownership "$qube tagged ok"
+	else
+		# The same stance as zone list: a lookalike is surfaced, not
+		# seized and not failed -- it is simply not ours to judge.
+		row ownership "$qube wears a wgq name but was NOT created by wgq (ignored)"
+	fi
+done
+
+# -- zones: the chain, and the dataplane inside it --------------------------
+
+zones=0
+for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
+	is_ours "$fw" || continue
+	zones=$((zones + 1))
+	zone=${fw#sys-fw-}
+	vpn="sys-wgq-$zone"
+	[ "$zone" = wgq ] && vpn=sys-wgq
+	sect="zone $zone"
+
+	if ! qvm-check --quiet "$vpn" 2>/dev/null; then
+		bad "$sect" "$fw exists but $vpn does not; the zone is half gone" \
+			"sudo wgq zone add $zone   (recreates and reconverges the pair)"
+		continue
+	fi
+
+	fw_netvm=$(qvm-prefs "$fw" netvm 2>/dev/null || :)
+	if [ "$fw_netvm" = "$vpn" ]; then
+		uplink=$(qvm-prefs "$vpn" netvm 2>/dev/null || :)
+		case "$uplink" in
+			sys-fw-*) row "$sect" "chain $fw -> $vpn -> $uplink (chained through zone ${uplink#sys-fw-})" ;;
+			*) row "$sect" "chain $fw -> $vpn -> ${uplink:-?} ok" ;;
+		esac
+	else
+		bad "$sect" "$fw routes to '${fw_netvm:-nothing}', not $vpn: clients bypass the tunnel path" \
+			"qvm-prefs $fw netvm $vpn"
+	fi
+
+	clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
+		| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
+	row "$sect" "clients: ${clients:-none}"
+
+	template=$(qvm-ls --raw-data --fields name,template 2>/dev/null \
+		| awk -F'|' -v v="$vpn" '$1 == v {print $2}')
+	if [ -n "$template" ] && [ "$template" != "$TEMPLATE" ]; then
+		row "$sect" "note: $vpn runs template '$template', expected $TEMPLATE"
+	fi
+
+	if ! qvm-check --quiet --running "$vpn" 2>/dev/null; then
+		row "$sect" "$vpn halted; dataplane checks skipped (start it and re-run)"
+		continue
+	fi
+
+	state=$(vpn_probe "$vpn" 'cat /run/wgq/state') && rc=0 || rc=$?
+	if [ "$rc" -eq 9 ]; then
+		row "$sect" "no qvm-run here; dataplane checks skipped"
+		continue
+	fi
+	case "$state" in
+		ok\ peer=*)
+			row "$sect" "firewall state: $state"
+			;;
+		broken:*)
+			bad "$sect" "firewall state is '$state': the qube sealed itself" \
+				"sudo wgq -z $zone switch <peer>   (and read: journalctl -t wgq-firewall in $vpn)"
+			;;
+		*)
+			row "$sect" "could not read /run/wgq/state; probe skipped"
+			continue
+			;;
+	esac
+
+	if vpn_probe "$vpn" 'nft list chain ip qubes custom-forward' \
+		| grep -q 'oifname != "wg0"'; then
+		row "$sect" "kill switch installed ok"
+	else
+		bad "$sect" "kill switch rules NOT in custom-forward" \
+			"qvm-run -u root $vpn 'systemctl restart qubes-firewall'"
+	fi
+
+	if vpn_probe "$vpn" 'nft list table inet qubes-nat-accel' >/dev/null 2>&1; then
+		bad "$sect" "the qubes-nat-accel fast path EXISTS: offloaded flows would bypass the kill switch" \
+			"qvm-run -u root $vpn 'systemctl restart qubes-firewall'"
+	else
+		row "$sect" "accel fast path absent ok"
+	fi
+
+	if vpn_probe "$vpn" 'test -x /rw/config/network-hooks.d/90-wgq-no-accel'; then
+		row "$sect" "no-accel hook present ok"
+	else
+		bad "$sect" "no-accel hook missing: the fast path returns on the next vif event" \
+			"qvm-run -u root $vpn 'systemctl restart qubes-firewall'"
+	fi
+done
+[ "$zones" -gt 0 ] || row zones "none exist; create one with: sudo wgq zone add <zone>"
+
+# -- verdict ----------------------------------------------------------------
+
+printf '\n'
+if [ "$failed" -eq 0 ]; then
+	ok "doctor: nothing broken"
+	exit 0
+fi
+die "doctor: $failed broken invariant(s); each has its fix above"
