@@ -123,6 +123,8 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 	vpn="sys-wgq-$zone"
 	[ "$zone" = wgq ] && vpn=sys-wgq
 	sect="zone $zone"
+	[ "$zone" = wgq ] && row "$sect" \
+		"the reserved zone is deprecated: sudo wgq zone rename wgq <name> (bare-name support ends in 0.4.0)"
 
 	if ! qvm-check --quiet "$vpn" 2>/dev/null; then
 		bad "$sect" "$fw exists but $vpn does not; the zone is half gone" \

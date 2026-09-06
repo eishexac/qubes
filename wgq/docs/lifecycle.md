@@ -80,7 +80,14 @@ that runs is always the one the airlock approved:
 sudo wgq zone add <zone> [--upstream <netvm>] [--attach <qube>[,<qube>...]]...
 sudo wgq zone attach <zone> <qube>    sudo wgq zone detach <qube> [netvm]
 sudo wgq zone list                    sudo wgq zone remove <zone>
+sudo wgq zone rename <old> <new>
 ```
+
+`rename` migrates a zone under a new name — clone, retag, rewire
+(clients follow), remove the old pair, converge. The zone is dark for
+the duration and the mgmt bundle moves with it, so the registered
+provider key survives. It exists chiefly to migrate the deprecated
+reserved zone: `sudo wgq zone rename wgq <name>`.
 
 (`sudo` is part of every dom0 `wgq` command, not just the destructive
 ones: the entrypoint is a symlink into `/srv/salt`, which Qubes keeps

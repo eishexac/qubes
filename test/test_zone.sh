@@ -98,8 +98,11 @@ zone=$(printf '%s' "$*" | sed -n 's/.*"zone": "\([a-z0-9-]*\)".*/\1/p')
 if [ -n "$zone" ]; then
 	vpn="sys-wgq-$zone"
 	[ "$zone" = wgq ] && vpn=sys-wgq
-	printf '%s|AppVM|sys-firewall|True\n' "$vpn" >> "${FAKEQ:?}"
-	printf 'sys-fw-%s|AppVM|%s|True\n' "$zone" "$vpn" >> "$FAKEQ"
+	# create-if-missing, like the real salt states: qubesd never dupes
+	grep -q "^$vpn|" "${FAKEQ:?}" \
+		|| printf '%s|AppVM|sys-firewall|True\n' "$vpn" >> "$FAKEQ"
+	grep -q "^sys-fw-$zone|" "$FAKEQ" \
+		|| printf 'sys-fw-%s|AppVM|%s|True\n' "$zone" "$vpn" >> "$FAKEQ"
 	# the adoption guard in wg-zone.sls tags what it makes
 	printf '%s|created-by-wgq\nsys-fw-%s|created-by-wgq\n' "$vpn" "$zone" >> "${TAGS:?}"
 fi
@@ -107,7 +110,24 @@ EOF
 
 cat >"$WORK/bin/qvm-shutdown" <<'EOF'
 #!/bin/sh
-exit 0
+for a in "$@"; do
+	case "$a" in
+		-*) ;;
+		*)
+			grep -v "^${a}\$" "${RUNNING:?}" > "$RUNNING.tmp" || :
+			mv "$RUNNING.tmp" "$RUNNING"
+			;;
+	esac
+done
+EOF
+
+cat >"$WORK/bin/qvm-clone" <<'EOF'
+#!/bin/sh
+old=$1 new=$2
+awk -F'|' -v OFS='|' -v o="$old" -v n="$new" \
+	'{ print } $1 == o { print n, $2, $3, $4 }' "${FAKEQ:?}" > "$FAKEQ.tmp" \
+	&& mv "$FAKEQ.tmp" "$FAKEQ"
+printf 'clone %s %s\n' "$old" "$new" >> "${QCTL_LOG:?}"
 EOF
 
 cat >"$WORK/bin/qvm-remove" <<'EOF'
@@ -294,16 +314,61 @@ else
 	fail "list went wrong"
 fi
 
-# 9. Bare `add` prompts; Enter takes the single-VPN default: bare sys-wgq.
-if printf '\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" add >"$WORK/out" 2>&1 \
-	&& grep -q 'single-VPN default' "$WORK/out" \
-	&& grep -q '^sys-wgq|' "$FAKEQ" \
-	&& grep -q '^sys-fw-wgq|' "$FAKEQ"; then
-	ok "bare add defaults to the singleton (sys-wgq + sys-fw-wgq)"
+# 9a. Every zone is named: bare `add` refuses instead of prompting for
+# a default nobody chose.
+if zone add >"$WORK/out" 2>&1; then
+	fail "bare add still created something"
+elif grep -q 'name the zone' "$WORK/out"; then
+	ok "bare add refuses: zones are named"
 else
 	cat "$WORK/out"
-	fail "singleton default went wrong"
+	fail "bare add refused for the wrong reason"
 fi
+
+# 9b. The reserved zone cannot be BORN anymore.
+if zone add wgq >"$WORK/out" 2>&1; then
+	fail "a fresh reserved zone was created"
+elif grep -q 'cannot be created anymore' "$WORK/out"; then
+	ok "a fresh reserved zone is refused"
+else
+	cat "$WORK/out"
+	fail "fresh reserved zone refused for the wrong reason"
+fi
+
+# 9c. An EXISTING reserved zone (a pre-0.3.0 install) still converges,
+# with the deprecation warning pointing at rename.
+printf 'sys-wgq|AppVM|sys-firewall|True\nsys-fw-wgq|AppVM|sys-wgq|True\n' >>"$FAKEQ"
+printf 'sys-wgq|created-by-wgq\nsys-fw-wgq|created-by-wgq\n' >>"$TAGS"
+if zone add wgq >"$WORK/out" 2>&1 \
+	&& grep -q 'deprecated' "$WORK/out" \
+	&& grep -q 'rename wgq' "$WORK/out"; then
+	ok "an existing reserved zone converges with the deprecation warning"
+else
+	cat "$WORK/out"
+	fail "legacy reserved-zone converge went wrong"
+fi
+
+# 9d. The migration itself: rename the reserved zone. Clone, retag,
+# rewire (including an attached client), remove the old pair, converge
+# under the new name -- and the mgmt bundle follows.
+printf 'tc1|AppVM|sys-fw-wgq|False\n' >>"$FAKEQ"
+if printf 'vault\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" rename wgq vault >"$WORK/out" 2>&1 \
+	&& grep -q 'clone sys-wgq sys-wgq-vault' "$QCTL_LOG" \
+	&& grep -q 'clone sys-fw-wgq sys-fw-vault' "$QCTL_LOG" \
+	&& [ "$(netvm_of sys-fw-vault)" = "sys-wgq-vault" ] \
+	&& [ "$(netvm_of tc1)" = "sys-fw-vault" ] \
+	&& ! grep -q '^sys-wgq|' "$FAKEQ" \
+	&& ! grep -q '^sys-fw-wgq|' "$FAKEQ" \
+	&& grep -q 'sys-wgq-vault|created-by-wgq' "$TAGS" \
+	&& grep -q 'zones/wgq' "$QCTL_LOG" \
+	&& grep -q '"zone": "vault"' "$QCTL_LOG"; then
+	ok "rename migrates the reserved zone: clone, retag, rewire, converge"
+else
+	cat "$WORK/out"
+	fail "rename went wrong"
+fi
+zone detach tc1 >/dev/null 2>&1 || true
+grep -v '^tc1|' "$FAKEQ" >"$FAKEQ.tmp" && mv "$FAKEQ.tmp" "$FAKEQ"
 
 # 10. The magic attach flags are gone for good: a sweep that once rewired
 # Whonix plumbing must never come back, even as a refused option.
@@ -319,17 +384,17 @@ else
 	fail "a deleted attach flag still did something"
 fi
 
-# 11. Removing the singleton zone removes the bare-named qube.
-awk -F'|' '$3 == "sys-fw-wgq" {print $1}' "$FAKEQ" | while read -r q; do
+# 11. Removing the renamed zone takes the suffixed pair.
+awk -F'|' '$3 == "sys-fw-vault" {print $1}' "$FAKEQ" | while read -r q; do
 	zone detach "$q" >/dev/null 2>&1 || true
 done
-if printf 'wgq\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove wgq >"$WORK/out" 2>&1 \
-	&& ! grep -q '^sys-wgq|' "$FAKEQ" \
-	&& ! grep -q '^sys-fw-wgq|' "$FAKEQ"; then
-	ok "singleton zone removal takes the bare-named qube"
+if printf 'vault\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove vault >"$WORK/out" 2>&1 \
+	&& ! grep -q '^sys-wgq-vault|' "$FAKEQ" \
+	&& ! grep -q '^sys-fw-vault|' "$FAKEQ"; then
+	ok "renamed zone removal takes the suffixed pair"
 else
 	cat "$WORK/out"
-	fail "singleton removal went wrong"
+	fail "renamed zone removal went wrong"
 fi
 
 # 11a2. doctor: on this healthy fake machine every invariant holds. The
