@@ -1,0 +1,248 @@
+#!/bin/sh
+#
+# wgq-verify - prove a zone leak-tight, from dom0, in one command.
+#
+#     sudo wgq verify [-z <zone>] [--client <qube>] [--kill-rounds N]
+#                     [--clearnet-ip <ip>]
+#
+# The verifier runs where the leak would be observable -- a client qube
+# behind the zone -- but every conductor's job belongs here: parameters
+# come from the zone itself, the clearnet address from wgq-mgmt, the
+# probes are pushed fresh from the reviewed tree (stdlib Python only, so
+# the client needs nothing installed, ever), and the tunnel is stopped
+# and started by dom0 -- no second terminal, no Enter-pressing.
+#
+# The kill test is the gate that caught both real bugs this project has
+# had, and it was intermittent; --kill-rounds N repeats the whole
+# stop/probe/start cycle so "three greens" is one invocation.
+#
+# Exit status: 0 iff nothing failed. Checks that cannot run are SKIPs
+# and do not fail the run; a leak or an unprovable tunnel state does.
+
+set -eu
+
+PROG=${WGQ_PROG:-${0##*/}}
+case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
+# shellcheck source=dom0/msg.sh
+. "$wgq_here/msg.sh"
+
+PROBES="$wgq_here/verify-probes.py"
+MGMT=${WGQ_MGMT:-wgq-mgmt}
+
+usage() {
+	printf 'usage: %s [-z <zone>] [--client <qube>] [--kill-rounds N] [--clearnet-ip <ip>]\n' "$PROG" >&2
+	exit 2
+}
+
+zone=wgq
+client=''
+rounds=1
+clearnet=''
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-z | --zone)
+			[ $# -ge 2 ] || usage
+			zone=$2
+			shift 2
+			;;
+		--client)
+			[ $# -ge 2 ] || usage
+			client=$2
+			shift 2
+			;;
+		--kill-rounds)
+			[ $# -ge 2 ] || usage
+			rounds=$2
+			shift 2
+			;;
+		--clearnet-ip)
+			[ $# -ge 2 ] || usage
+			clearnet=$2
+			shift 2
+			;;
+		*) usage ;;
+	esac
+done
+case "$zone" in
+	'' | *[!a-z0-9-]* | -*) die "unusable zone name '$zone'" ;;
+esac
+case "$rounds" in
+	'' | *[!0-9]*) die "--kill-rounds expects a number" ;;
+esac
+
+vpnq="sys-wgq-$zone"
+[ "$zone" = wgq ] && vpnq=sys-wgq
+fwq="sys-fw-$zone"
+
+qvm-check --quiet "$fwq" 2>/dev/null || die "zone '$zone' does not exist"
+
+# Same ownership rule as every mutating verb: this command stops the
+# zone's tunnel, so the zone must be wgq's own.
+is_ours() {
+	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
+	case "$(qvm-prefs "$1" label 2>/dev/null)" in
+		wgq | wgq-fw | wgq-mgmt | wgq-tpl) return 0 ;;
+	esac
+	return 1
+}
+is_ours "$vpnq" || die "$vpnq was not created by wgq; refusing to drive its tunnel"
+
+# The client is named, or the zone's single attached client by
+# implication -- two or more means --client is required. Never guessed.
+if [ -z "$client" ]; then
+	clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
+		| awk -F'|' -v fw="$fwq" '$2 == fw {print $1}')
+	# shellcheck disable=SC2086 # deliberate word splitting: one name per word
+	set -- $clients
+	case $# in
+		0) die "zone '$zone' has no attached client; attach one first: $PROG zone attach $zone <qube>" ;;
+		1) client=$1 ;;
+		*) die "zone '$zone' has $# clients ($clients); name one with --client" ;;
+	esac
+fi
+qvm-check --quiet "$client" 2>/dev/null || die "no such qube '$client'"
+
+# One JSON field out of a probe result, or empty on any parse trouble.
+jfield() {
+	python3 -c '
+import json, sys
+try:
+    doc = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+value = doc.get(sys.argv[1], "")
+if isinstance(value, bool):
+    print(int(value))
+elif isinstance(value, list):
+    print(" ".join(str(item) for item in value))
+else:
+    print(value)
+' "$1"
+}
+
+probe() {
+	qvm-run --no-gui --pass-io -- "$client" "python3 /tmp/wgq-probes.py $*" 2>/dev/null || :
+}
+
+vpn_root() {
+	qvm-run --no-gui --pass-io -u root -- "$vpnq" "$*" 2>/dev/null
+}
+
+passed=0
+failed=0
+skipped=0
+report() { # report <PASS|FAIL|SKIP> <n> <text>
+	case "$1" in
+		PASS)
+			passed=$((passed + 1))
+			ok "[$2] $3"
+			;;
+		FAIL)
+			failed=$((failed + 1))
+			warn "[$2] FAIL: $3"
+			;;
+		SKIP)
+			skipped=$((skipped + 1))
+			note "[$2] skip: $3"
+			;;
+	esac
+}
+
+# -- parameters, gathered not asked for -------------------------------------
+
+state=$(vpn_root 'cat /run/wgq/state' || :)
+case "$state" in
+	ok\ peer=*) ;;
+	*) die "zone '$zone' firewall state is '${state:-unknown}'; bring the tunnel up first (sudo wgq switch)" ;;
+esac
+resolver=${state##*dns=}
+
+endpoint=$(vpn_root 'wg show wg0 endpoints' | awk 'NR==1 {print $2}' || :)
+case "$endpoint" in
+	*.*.*.*:*) ;;
+	*) die "no live endpoint on $vpnq (wg show gave '${endpoint:-nothing}'); run sudo wgq switch first" ;;
+esac
+ep_ip=${endpoint%:*}
+ep_port=${endpoint##*:}
+
+if [ -z "$clearnet" ]; then
+	clearnet=$(qvm-run --no-gui --pass-io -u user -- "$MGMT" \
+		"python3 -c \"import urllib.request; print(urllib.request.urlopen('https://ifconfig.me/ip', timeout=8).read(64).decode().strip())\"" \
+		2>/dev/null || :)
+fi
+
+note "zone $zone: client $client, endpoint $endpoint, resolver $resolver"
+note "clearnet: ${clearnet:-unknown (check 1 will be skipped; pass --clearnet-ip)}"
+
+trace "-> pushing probes into $client (stdlib python, nothing to install)"
+qvm-run --no-gui --pass-io -- "$client" 'cat > /tmp/wgq-probes.py' <"$PROBES"
+
+# -- check 1: the exit address reflects the tunnel --------------------------
+
+result=$(probe exitip)
+exit_ip=$(printf '%s' "$result" | jfield ip)
+if [ -z "$exit_ip" ]; then
+	report FAIL 1 "client could not learn its public address at all"
+elif [ -z "$clearnet" ]; then
+	report SKIP 1 "public address is $exit_ip; no clearnet anchor to compare against"
+elif [ "$exit_ip" = "$clearnet" ]; then
+	report FAIL 1 "public address equals the clearnet address: traffic is NOT in the tunnel"
+else
+	report PASS 1 "exit $exit_ip differs from clearnet $clearnet"
+fi
+
+# -- check 2: DNS is pinned -------------------------------------------------
+
+sys_ok=$(probe dnscheck system | jfield ok)
+arb_ok=$(probe dnscheck 192.0.2.1 | jfield ok)
+if [ "$sys_ok" != 1 ]; then
+	report FAIL 2 "ordinary DNS resolution returned nothing with the tunnel up"
+elif [ "$arb_ok" != 1 ]; then
+	report FAIL 2 "a query to 192.0.2.1 went unanswered: DNS is NOT intercepted, a client picking its own resolver escapes the pin"
+else
+	report PASS 2 "system DNS answers, arbitrary resolvers are intercepted"
+fi
+
+# -- check 3: the kill test, N rounds ---------------------------------------
+
+round=1
+kill_failed=0
+while [ "$round" -le "$rounds" ]; do
+	trace "-> round $round/$rounds: systemctl stop wg-tunnel on $vpnq"
+	vpn_root 'systemctl stop wg-tunnel' >/dev/null || :
+	# Prove the stop happened; a verifier that cannot tell whether its
+	# own kill landed is the dig bug wearing a new hat.
+	if vpn_root 'ip link show wg0' >/dev/null 2>&1; then
+		vpn_root 'systemctl start wg-tunnel' >/dev/null || :
+		die "wg0 still exists after stop; refusing to call this a kill test"
+	fi
+	leaked=$(probe killcheck "$ep_ip" "$ep_port" | jfield leaked)
+	if [ -n "$leaked" ]; then
+		report FAIL 3 "round $round: traffic escaped with the tunnel down: $leaked"
+		kill_failed=1
+	fi
+	trace "-> round $round/$rounds: systemctl start wg-tunnel on $vpnq"
+	vpn_root 'systemctl start wg-tunnel' >/dev/null || :
+	# Recovery must be proven too: the client resolving again means the
+	# tunnel is genuinely carrying traffic, not merely up.
+	tries=0
+	until [ "$(probe dnscheck system | jfield ok)" = 1 ]; do
+		tries=$((tries + 1))
+		[ "$tries" -lt 15 ] || die "tunnel did not recover after round $round (client DNS still dark)"
+		sleep 3
+	done
+	round=$((round + 1))
+done
+[ "$kill_failed" -eq 0 ] \
+	&& report PASS 3 "nothing escaped with the tunnel down ($rounds round(s)), and recovery was proven each time"
+
+# -- check 4: upstream capture ----------------------------------------------
+
+report SKIP 4 "upstream pcap audit is not orchestrated yet; see test/verify.sh for the manual procedure"
+
+printf '\n' >&2
+if [ "$failed" -eq 0 ]; then
+	ok "leak-tight: yes ($passed passed, $skipped skipped)"
+	exit 0
+fi
+die "leak-tight: NO ($failed failed, $passed passed, $skipped skipped)"

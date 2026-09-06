@@ -7,12 +7,12 @@ identity zone, with an endpoint allowlist enforced outside the qube it
 constrains.
 
 > [!WARNING]
-> **This has never been run.** Not once, end to end, on any machine.
->
-> It is public so the reasoning can be checked, not because it is ready to
-> protect anyone. Do not make it your only defence against a VPN leak. If you
-> need something to rely on today, use [Solene's forum guide][solene] — the
-> best-tested community reference for 4.2 and 4.3.
+> **Young software, one machine of history.** It has been run end to end
+> on real hardware (see Status), and its kill test has caught real bugs —
+> but that is one author, one machine, one provider. Do not make it your
+> only defence against a VPN leak yet. If you need the battle-tested
+> path today, use [Solene's forum guide][solene] — the best-tested
+> community reference for 4.2 and 4.3.
 
 [solene]: https://forum.qubes-os.org/t/wireguard-vpn-setup-4-2-and-4-3/19141
 
@@ -353,6 +353,7 @@ sudo wgq pubkey | sudo wgq provision --provider ivpn --zone wgq
 sudo wgq sync
 sudo wgq switch <peer>
 sudo wgq firewall --zone wgq
+sudo wgq verify --kill-rounds 3
 ```
 
 The only qubes whose netvm ever changes are the ones you typed — there is
@@ -458,9 +459,18 @@ labels and icons, policy — each step confirmed.
 
 ## Verify
 
-This is the part nobody ships, and it matters more than the rest. Run it from
-a **client** qube — never the VPN qube, whose own egress to the endpoint is
-deliberately permitted.
+This is the part nobody ships, and it matters more than the rest.
+
+The one-command way, from dom0: `sudo wgq verify [-z <zone>]
+[--kill-rounds N]`. It gathers the endpoint and resolver from the zone,
+the clearnet address from wgq-mgmt, pushes stdlib-Python probes into the
+zone's client (nothing to install there, ever), runs the checks, and
+drives the kill test itself — stopping the tunnel, proving it stopped,
+probing, restarting, and proving recovery, N rounds in one run. The
+manual script below remains for zones wgq did not build.
+
+Run the manual script from a **client** qube — never the VPN qube, whose
+own egress to the endpoint is deliberately permitted.
 
 ```sh
 qvm-copy test/verify.sh          # into a client qube
