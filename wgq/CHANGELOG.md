@@ -21,6 +21,14 @@ positional. See docs/lifecycle.md as sections land.
 - `-z <zone>` is accepted anywhere on the line and keeps working
   everywhere; `--zone` after a management verb still belongs to that
   verb.
+- Zone colours, in the console: `zone add <name> --color blue` picks
+  from a 12-colour palette, omitting it auto-assigns the first free
+  one, and no two zones share a colour. The colour paints the zone's
+  name in `zone list` and the picker (never in pipes — NO_COLOR and
+  non-tty stay escape-free), rides `zone list --json` as a field, is
+  stored as a feature on the VPN qube, travels through `rename`, and
+  is freed by `remove`. Icons and qube labels are deliberately
+  untouched.
 - `wgq restart [zone]`: the shutdown/start cycle that makes an update
   real, offered — the plan prints first, the clients that go dark are
   named, one confirmation, declining runs nothing. The install plan now

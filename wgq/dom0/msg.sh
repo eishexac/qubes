@@ -47,6 +47,41 @@ trace() {
 	fi
 }
 
+# The zone palette: 12 nameable, visually distinct 256-colour entries.
+# A zone's colour is assigned at `zone add` (picked or first-free) and
+# stored as a feature on its VPN qube; these helpers only translate.
+# paint_to <fd> <colour-name> <text>: coloured when that stream is a
+# colour-willing tty, plain otherwise -- pipes never see an escape.
+# shellcheck disable=SC2034 # consumed by the sourcing tools (wgq-zone)
+ZONE_PALETTE='blue orange purple cyan magenta green yellow teal pink red gray brown'
+
+zone_colour_code() {
+	case "$1" in
+		blue) printf 33 ;;
+		orange) printf 208 ;;
+		purple) printf 135 ;;
+		cyan) printf 51 ;;
+		magenta) printf 201 ;;
+		green) printf 40 ;;
+		yellow) printf 220 ;;
+		teal) printf 30 ;;
+		pink) printf 213 ;;
+		red) printf 196 ;;
+		gray) printf 245 ;;
+		brown) printf 130 ;;
+		*) return 1 ;;
+	esac
+}
+
+paint_to() {
+	p_code=$(zone_colour_code "$2" 2>/dev/null || :)
+	if [ -n "$p_code" ] && colour_to "$1"; then
+		printf '[38;5;%sm%s[0m' "$p_code" "$3"
+	else
+		printf '%s' "$3"
+	fi
+}
+
 note() { _say '' '' "$*"; }
 ok() { _say '32' '' "$*"; }
 warn() { _say '33' 'warning:' "$*"; }

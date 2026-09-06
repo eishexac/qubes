@@ -524,6 +524,38 @@ else
 fi
 grep -v '^sys-wgq-alien|' "$FAKEQ" >"$FAKEQ.tmp" && mv "$FAKEQ.tmp" "$FAKEQ"
 
+# 11a6b. Zone colours: refused off-palette, unique across zones,
+# stored as a feature, painted only for humans (this harness is a pipe,
+# so outputs stay escape-free).
+if zone add zc --color plaid >"$WORK/out" 2>&1; then
+	fail "an off-palette colour was accepted"
+elif grep -q "unknown colour 'plaid'" "$WORK/out"; then
+	ok "an off-palette colour is refused with the palette shown"
+else
+	cat "$WORK/out"
+	fail "bad colour refused for the wrong reason"
+fi
+work_colour=$(awk -F'|' '$1 == "sys-wgq-work" && $2 == "wgq.color" {print $3}' "$FEATS" | head -1)
+if [ -n "$work_colour" ] \
+	&& ! zone add zc --color "$work_colour" >"$WORK/out" 2>&1 \
+	&& grep -q "already worn" "$WORK/out"; then
+	ok "a colour cannot be worn by two zones"
+else
+	cat "$WORK/out"
+	fail "duplicate colour was not refused (work wears '$work_colour')"
+fi
+if zone add zc --color pink >"$WORK/out" 2>&1 \
+	&& grep -q 'sys-wgq-zc|wgq.color|pink' "$FEATS" \
+	&& grep -q 'wears pink' "$WORK/out" \
+	&& ! grep -q '\033' "$WORK/out"; then
+	ok "a picked colour stores on the zone and prints plain off-tty"
+else
+	cat "$WORK/out"
+	fail "colour assignment went wrong"
+fi
+printf 'zc\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove zc >/dev/null 2>&1 || :
+grep -v '^sys-wgq-zc|' "$FEATS" >"$FEATS.tmp" && mv "$FEATS.tmp" "$FEATS"
+
 # 11a7. The restart cycle: plan first, clients named as going dark, one
 # confirmation; fw down (forced, it stops under clients), vpn down,
 # mgmt down, template down, fw and mgmt back up -- template stays
@@ -569,7 +601,7 @@ rows = json.load(open('$WORK/out'))
 assert isinstance(rows, list), rows
 assert any(r.get('zone') == 'work' for r in rows), rows
 for r in rows:
-	assert set(r) == {'zone', 'vpn', 'fw', 'clients'}, r
+	assert set(r) == {'zone', 'vpn', 'fw', 'color', 'clients'}, r
 	assert isinstance(r['clients'], list), r
 "; then
 	ok "list --json parses and carries zone, vpn, fw, clients"
