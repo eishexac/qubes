@@ -139,6 +139,10 @@ for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || tru
 		| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
 	row "$sect" "clients: ${clients:-none}"
 
+	if [ "$(qvm-features "$vpn" service.wgq-no-autoconnect 2>/dev/null || :)" = 1 ]; then
+		row "$sect" "autoconnect off: boots sealed until an explicit connect"
+	fi
+
 	template=$(qvm-ls --raw-data --fields name,template 2>/dev/null \
 		| awk -F'|' -v v="$vpn" '$1 == v {print $2}')
 	if [ -n "$template" ] && [ "$template" != "$TEMPLATE" ]; then

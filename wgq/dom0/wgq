@@ -53,6 +53,8 @@ usage() {
 	printf '       %s panic [-z <zone>]         (EMERGENCY: kill + block every zone, or one)\n' "$PROG" >&2
 	printf '       %s verify [-z <zone>] [--kill-rounds N]  (prove the zone leak-tight)\n' "$PROG" >&2
 	printf '       %s doctor                    (check every wgq invariant, with fixes)\n' "$PROG" >&2
+	printf '       %s connect|disconnect        (tunnel up / zone dark -- never clear)\n' "$PROG" >&2
+	printf '       %s set autoconnect on|off | set dns <ip>|default | get\n' "$PROG" >&2
 	printf '       %s uninstall\n' "$PROG" >&2
 	printf '       %s credential <provider>     (store the account id in %s)\n' "$PROG" "$MGMT" >&2
 	printf '       %s [-z <zone>] sync          (peer bundle: %s -> VPN qube + apply)\n' "$PROG" "$MGMT" >&2
@@ -188,6 +190,10 @@ case "$verb" in
 		shift
 		WGQ_PROG="$PROG doctor" export WGQ_PROG
 		exec "$wgq_here/wgq-doctor" "$@"
+		;;
+	connect | disconnect | set | get)
+		WGQ_PROG="$PROG" export WGQ_PROG
+		exec "$wgq_here/wgq-ctl" --zone "$zone" "$@"
 		;;
 	uninstall)
 		exec "$wgq_here/wgq-uninstall"

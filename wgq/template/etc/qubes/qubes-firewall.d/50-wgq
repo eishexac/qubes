@@ -206,6 +206,19 @@ if [ -n "$target" ]; then
 	esac
 fi
 
+# A resolver override, written by `wgq set dns` from dom0, wins over the
+# peer's own resolver -- but only if it is a plausible address. An
+# unusable override falls back to the provider pin rather than to no pin
+# at all: mispasting an IP must never widen where client DNS can go.
+dns_override=''
+if [ -f "$WG_DIR/dns" ]; then
+	dns_override=$(head -n1 "$WG_DIR/dns" | tr -d ' \t')
+	if ! is_ipv4 "$dns_override"; then
+		warn "settings resolver override '$dns_override' is not an IPv4 address; using the provider resolver"
+		dns_override=''
+	fi
+fi
+
 dns=''
 if [ -n "$peer" ] && [ -f "$WG_DIR/peers/$peer.meta" ]; then
 	dns=$(sed -n 's/^dns=\(.*\)$/\1/p' "$WG_DIR/peers/$peer.meta" \
@@ -220,6 +233,11 @@ fi
 # and a re-add, a client query would fall through to Qubes' own dnat-dns
 # chain at -100 -- an identity mapping in this qube -- and head for the
 # uplink shaped exactly like the flow the flowtable loved to offload.
+if [ -n "$dns_override" ]; then
+	note "client DNS pinned to settings override $dns_override (provider resolver would be ${dns:-none})"
+	dns=$dns_override
+fi
+
 if [ -n "$dns" ]; then
 	rule_udp="add rule ip qubes wgq-dns iifgroup 2 udp dport 53 dnat to $dns"
 	rule_tcp="add rule ip qubes wgq-dns iifgroup 2 tcp dport 53 dnat to $dns"

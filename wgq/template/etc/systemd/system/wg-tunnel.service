@@ -11,7 +11,7 @@ RemainAfterExit=yes
 ExecStart=/usr/sbin/wg-tunnel up
 ExecStop=/usr/sbin/wg-tunnel down
 
-[Install]
-# Enable this in the TEMPLATE, not in the qube: /etc is restored from the
-# template on every AppVM boot, so `systemctl enable` inside a qube is lost.
-WantedBy=multi-user.target
+# No [Install] section, deliberately: this unit is MANUAL. Boot-time
+# starting belongs to wg-autoconnect.service alone, so that the
+# per-qube wgq-no-autoconnect flag can gate the boot without gating
+# `wgq connect` (a Condition here would gate both).
