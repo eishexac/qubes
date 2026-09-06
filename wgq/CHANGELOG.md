@@ -27,7 +27,15 @@ record what changed for the person running the tool.
   reached through the tunnel only. An unusable value is refused in dom0;
   an unusable stored override falls back to the provider pin, never to
   no pin.
-- `wgq get`: the zone's settings and tunnel state.
+- `wgq get`: the zone's settings and tunnel state, each value labeled
+  with the layer that answered (zone override, global, default).
+- `wgq set --global`: settings layer under the per-zone overrides --
+  a global default applies to every zone without its own value, stored
+  as features on dom0, materialized into the zones at set and connect,
+  and checked for drift by doctor. New zones inherit globals at birth.
+- A STUN probe joins `wgq verify` (check 1b): the public address a STUN
+  server sees over UDP must match the tunnel exit -- the WebRTC leak
+  question answered at the layer this tool controls.
 - `--json` on `servers`, `peer list`, `status` and `zone list`: one
   parseable document on stdout, human notes on stderr.
 
@@ -38,6 +46,9 @@ record what changed for the person running the tool.
   autoconnect or `wgq connect`.
 
 ### Upgrading
+
+A `set autoconnect off` made with a build before the settings layering
+must be re-run once (the bare boot flag is no longer read as intent).
 
 The template changed. After `airlock apply wgq`: shut down the wgq
 template, restart the zone qubes, then check with `wgq doctor` and

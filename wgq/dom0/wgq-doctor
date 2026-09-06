@@ -146,7 +146,18 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 		| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
 	row "$sect" "clients: ${clients:-none}"
 
-	if [ "$(qvm-features "$vpn" service.wgq-no-autoconnect 2>/dev/null || :)" = 1 ]; then
+	# Settings: features are the truth, the dataplane holds copies --
+	# an explicit truth contradicted by its copy is drift worth failing.
+	d_auto=$(qvm-features "$vpn" wgq.autoconnect 2>/dev/null || :)
+	[ -n "$d_auto" ] || d_auto=$(qvm-features dom0 wgq.autoconnect 2>/dev/null || :)
+	d_flag=$(qvm-features "$vpn" service.wgq-no-autoconnect 2>/dev/null || :)
+	if [ "$d_auto" = off ] && [ "$d_flag" != 1 ]; then
+		bad "$sect" "autoconnect is set off but the boot flag is not materialized" \
+			"sudo wgq -z $zone connect   (or: sudo wgq -z $zone set autoconnect off)"
+	elif [ "$d_auto" = on ] && [ "$d_flag" = 1 ]; then
+		bad "$sect" "autoconnect is set on but the boot flag still seals the zone" \
+			"sudo wgq -z $zone connect"
+	elif [ "$d_flag" = 1 ]; then
 		row "$sect" "autoconnect off: boots sealed until an explicit connect"
 	fi
 
@@ -214,6 +225,16 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 	else
 		bad "$sect" "no-accel hook missing: the fast path returns on the next vif event" \
 			"qvm-run -u root $vpn 'systemctl restart qubes-firewall'"
+	fi
+
+	d_dns=$(qvm-features "$vpn" wgq.dns 2>/dev/null || :)
+	[ -n "$d_dns" ] || d_dns=$(qvm-features dom0 wgq.dns 2>/dev/null || :)
+	d_file=$(vpn_probe "$vpn" 'cat /rw/config/wg/dns 2>/dev/null' || :)
+	if [ "${d_dns:-}" != "${d_file:-}" ]; then
+		bad "$sect" "stored resolver ('${d_dns:-provider}') and dataplane copy ('${d_file:-provider}') differ" \
+			"sudo wgq -z $zone connect   (re-materializes the settings)"
+	elif [ -n "$d_dns" ]; then
+		row "$sect" "resolver override $d_dns materialized ok"
 	fi
 done
 [ "$zones" -gt 0 ] || row zones "none exist; create one with: sudo wgq zone add <zone>"

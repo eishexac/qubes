@@ -93,5 +93,33 @@ class TestParseAnswers(unittest.TestCase):
             probes.parse_answers(b"\x00\x01", TID)  # short
 
 
+class TestParseStun(unittest.TestCase):
+    TXID = b"\x01" * 12
+
+    def binding_success(self, ip="185.65.135.170", port=51820, txid=None):
+        cookie = probes.STUN_COOKIE
+        xport = port ^ (cookie >> 16)
+        xaddr = struct.unpack(">I", bytes(int(o) for o in ip.split(".")))[0] ^ cookie
+        attr = struct.pack(">HHBBH I", 0x0020, 8, 0, 0x01, xport, xaddr)
+        return (
+            struct.pack(">HHI", 0x0101, len(attr), cookie)
+            + (txid or self.TXID)
+            + attr
+        )
+
+    def test_xor_mapped_address_round_trips(self):
+        ip, port = probes.parse_stun(self.binding_success(), self.TXID)
+        self.assertEqual((ip, port), ("185.65.135.170", 51820))
+
+    def test_rejects_foreign_transaction(self):
+        with self.assertRaises(ValueError):
+            probes.parse_stun(self.binding_success(txid=b"\x02" * 12), self.TXID)
+
+    def test_rejects_response_without_the_attribute(self):
+        bare = struct.pack(">HHI", 0x0101, 0, probes.STUN_COOKIE) + self.TXID
+        with self.assertRaises(ValueError):
+            probes.parse_stun(bare, self.TXID)
+
+
 if __name__ == "__main__":
     unittest.main()

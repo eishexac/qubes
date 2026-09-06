@@ -215,6 +215,26 @@ else
 	report PASS 1 "exit $exit_ip differs from clearnet $clearnet"
 fi
 
+# -- check 1b: UDP exits where TCP does (the WebRTC question) ---------------
+#
+# A browser's WebRTC discovers its address over STUN -- UDP. Check 1
+# proved the HTTPS (TCP) exit; this proves the UDP path lands at the
+# same place, which is what "the Mullvad check would pass" means at the
+# layer this tool controls.
+
+stun_out=$(probe stun)
+stun_ok=$(printf '%s' "$stun_out" | jfield ok)
+stun_ip=$(printf '%s' "$stun_out" | jfield ip | sanitize)
+if [ "$stun_ok" != 1 ]; then
+	report SKIP 1b "no STUN answer (blocked upstream?); UDP exit unproven"
+elif [ -n "$clearnet" ] && [ "$stun_ip" = "$clearnet" ]; then
+	report FAIL 1b "STUN sees the CLEARNET address $stun_ip: UDP escapes the tunnel (WebRTC would leak)"
+elif [ -n "$exit_ip" ] && [ "$stun_ip" = "$exit_ip" ]; then
+	report PASS 1b "UDP exit $stun_ip matches the tunnel exit (WebRTC-safe)"
+else
+	report SKIP 1b "STUN sees $stun_ip (neither clearnet nor the check-1 exit; provider NAT can do this)"
+fi
+
 # -- check 2: DNS is pinned -------------------------------------------------
 
 sys_ok=$(probe dnscheck system | jfield ok)

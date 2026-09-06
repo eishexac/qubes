@@ -15,10 +15,20 @@
 #
 # Autoconnect is the default. Turning it off makes the zone boot sealed
 # (exactly like an unconfigured qube: forwarding refused) until an
-# explicit `wgq connect` -- the configure-first-connect-later flow. The
-# flag is a Qubes per-qube service feature, so it survives reboots and
-# template updates and is visible in qvm-features like any other.
+# explicit `wgq connect` -- the configure-first-connect-later flow.
+#
+# Settings are LAYERED: a global default (a feature on dom0) under a
+# per-zone override (the same feature on the zone's VPN qube); the
+# override wins, the built-in default backs both. Features are the
+# single source of truth -- what the dataplane reads (the qubes-service
+# flag, /rw/config/wg/dns) is a MATERIALIZED COPY, pushed at set and
+# connect, and doctor checks the copy against the truth. `get` names
+# the layer every value came from, so the layering stays honest.
 
+# The global-set fan-out rebinds vpn/zone inside a subshell ON PURPOSE:
+# each zone materializes under its own names and the outer zone's stay
+# untouched -- exactly what these two findings warn might be an accident.
+# shellcheck disable=SC2030,SC2031
 set -eu
 
 PROG=${WGQ_PROG:-${0##*/}}
@@ -27,7 +37,7 @@ case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
 . "$wgq_here/msg.sh"
 
 usage() {
-	printf 'usage: %s connect | disconnect | set autoconnect on|off | set dns <ipv4>|default | get\n' "$PROG" >&2
+	printf 'usage: %s connect | disconnect | set [--global] autoconnect on|off | set [--global] dns <ipv4>|default | get\n' "$PROG" >&2
 	exit 2
 }
 
@@ -94,13 +104,69 @@ is_ipv4() {
 	return 0
 }
 
+# The effective value of one key: zone override, else global, else empty
+# (the caller applies the built-in default).
+effective() {
+	e_v=$(qvm-features "$vpn" "wgq.$1" 2>/dev/null || :)
+	if [ -n "$e_v" ]; then
+		printf '%s' "$e_v"
+	else
+		qvm-features dom0 "wgq.$1" 2>/dev/null || :
+	fi
+}
+
+layer_of() { # which layer answered: override | global | default
+	if [ -n "$(qvm-features "$vpn" "wgq.$1" 2>/dev/null || :)" ]; then
+		printf 'zone override'
+	elif [ -n "$(qvm-features dom0 "wgq.$1" 2>/dev/null || :)" ]; then
+		printf 'global'
+	else
+		printf 'default'
+	fi
+}
+
+# Push the effective settings into the dataplane's copies. Safe to run
+# any time the qube is up; a halted qube materializes at its next
+# connect. No legacy import here, deliberately: a bare service flag
+# cannot be told apart from one materialize itself wrote before the
+# feature was cleared -- guessing would re-arm a flag the user just
+# turned off. A pre-layering 'set autoconnect off' is re-run once.
+materialize() {
+	if [ "$(effective autoconnect)" = off ]; then
+		qvm-features "$vpn" service.wgq-no-autoconnect 1
+	elif [ -n "$(qvm-features "$vpn" service.wgq-no-autoconnect 2>/dev/null || :)" ]; then
+		qvm-features --unset "$vpn" service.wgq-no-autoconnect \
+			|| die "could not clear the autoconnect flag on $vpn"
+	fi
+	vpn_running || return 0
+	m_dns=$(effective dns)
+	if [ -n "$m_dns" ]; then
+		is_ipv4 "$m_dns" || die "stored resolver '$m_dns' is not an IPv4 address; fix it: sudo wgq set dns <ip>"
+		m_cur=$(vpn_root 'cat /rw/config/wg/dns' 2>/dev/null || :)
+		if [ "$m_cur" != "$m_dns" ]; then
+			vpn_root "mkdir -p /rw/config/wg && printf '%s\n' '$m_dns' > /rw/config/wg/dns" >/dev/null
+			vpn_root 'systemctl restart qubes-firewall' >/dev/null
+		fi
+	elif vpn_root 'test -f /rw/config/wg/dns' 2>/dev/null; then
+		vpn_root 'rm -f /rw/config/wg/dns' >/dev/null
+		vpn_root 'systemctl restart qubes-firewall' >/dev/null
+	fi
+}
+
 case "$verb" in
+	materialize)
+		# Hidden verb: zone add calls it so a newborn zone inherits the
+		# globals from its first boot, not its first hand-tuning.
+		[ $# -eq 0 ] || usage
+		materialize
+		;;
 	connect)
 		[ $# -eq 0 ] || usage
 		qvm-check --quiet --running "$vpn" 2>/dev/null || {
 			note "$vpn is halted; starting it"
 			qvm-start "$vpn"
 		}
+		materialize
 		vpn_root 'systemctl start wg-tunnel' >/dev/null
 		state=$(vpn_root 'cat /run/wgq/state' 2>/dev/null || :)
 		case "$state" in
@@ -118,66 +184,83 @@ case "$verb" in
 		ok "zone $zone is dark: the kill switch holds, clients get nothing until: sudo wgq -z $zone connect"
 		;;
 	set)
+		layer=zone
+		if [ "${1:-}" = --global ]; then
+			layer=global
+			shift
+		fi
 		[ $# -eq 2 ] || usage
 		key=$1
 		value=$2
 		case "$key" in
 			autoconnect)
-				case "$value" in
-					off)
-						qvm-features "$vpn" service.wgq-no-autoconnect 1
-						ok "zone $zone will boot sealed (tunnel down, forwarding refused) until an explicit connect"
-						;;
-					on)
-						if [ -n "$(qvm-features "$vpn" service.wgq-no-autoconnect 2>/dev/null || :)" ]; then
-							qvm-features --unset "$vpn" service.wgq-no-autoconnect \
-								|| die "could not clear the autoconnect flag on $vpn"
-						fi
-						ok "zone $zone connects at boot again (the default)"
-						;;
-					*) die "autoconnect is on or off, not '$value'" ;;
-				esac
-				note "takes effect from the next start of $vpn"
+				case "$value" in on | off) ;; *) die "autoconnect is on or off, not '$value'" ;; esac
 				;;
 			dns)
-				vpn_running || die "$vpn is halted; start the zone first: sudo wgq -z $zone connect"
-				if [ "$value" = default ]; then
-					vpn_root 'rm -f /rw/config/wg/dns' >/dev/null
-					ok "zone $zone resolver override removed; the provider resolver is pinned again"
-				else
+				if [ "$value" != default ]; then
 					is_ipv4 "$value" || die "'$value' is not an IPv4 address (or 'default')"
-					vpn_root "mkdir -p /rw/config/wg && printf '%s\\n' '$value' > /rw/config/wg/dns" >/dev/null
-					ok "zone $zone client DNS will be pinned to $value"
-					note "that resolver is reached THROUGH the tunnel: if it does not answer there, clients get no DNS rather than a leak"
-					note "an off-provider resolver is a fingerprinting and trust trade-off; the provider default avoids it"
 				fi
-				# The pin lives in the firewall script; re-run it and let it
-				# read its own work back.
-				vpn_root 'systemctl restart qubes-firewall' >/dev/null
-				state=$(vpn_root 'cat /run/wgq/state' 2>/dev/null || :)
-				case "$state" in
-					ok\ *) ok "firewall re-applied ($state)" ;;
-					degraded:*) die "firewall re-applied but reports '$state': forwarding is up and clients have NO DNS until a usable resolver is set" ;;
-					*) die "firewall re-apply reports '${state:-nothing}'; the zone sealed itself -- run: sudo wgq doctor" ;;
-				esac
 				;;
 			*) die "unknown setting '$key' (autoconnect, dns)" ;;
 		esac
+		# Store at the named layer; 'default' clears that layer so the
+		# one beneath answers again.
+		target=$vpn
+		[ "$layer" = global ] && target=dom0
+		if [ "$value" = default ] || { [ "$key" = autoconnect ] && [ "$value" = on ] && [ "$layer" = zone ]; }; then
+			if [ -n "$(qvm-features "$target" "wgq.$key" 2>/dev/null || :)" ]; then
+				qvm-features --unset "$target" "wgq.$key" \
+					|| die "could not clear wgq.$key on $target"
+			fi
+			ok "$layer $key cleared; the $([ "$layer" = zone ] && printf 'global (or default)' || printf 'built-in default') answers now"
+		else
+			qvm-features "$target" "wgq.$key" "$value"
+			ok "$layer $key = $value"
+		fi
+		case "$key" in
+			autoconnect) note "boot behavior changes from the next start of the affected zone(s)" ;;
+			dns) [ "$value" != default ] \
+				&& note "that resolver is reached THROUGH the tunnel: if it does not answer there, clients get no DNS rather than a leak" ;;
+		esac
+		# Materialize: this zone for a zone-set; every owned zone without
+		# its own override for a global-set (halted zones catch up at
+		# their next connect).
+		if [ "$layer" = zone ]; then
+			materialize
+		else
+			for m_fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
+				is_ours "$m_fw" || continue
+				m_zone=${m_fw#sys-fw-}
+				m_vpn="sys-wgq-$m_zone"
+				[ "$m_zone" = wgq ] && m_vpn=sys-wgq
+				qvm-check --quiet "$m_vpn" 2>/dev/null || continue
+				if [ -n "$(qvm-features "$m_vpn" "wgq.$key" 2>/dev/null || :)" ]; then
+					note "zone $m_zone keeps its own $key override"
+					continue
+				fi
+				(
+					vpn=$m_vpn
+					zone=$m_zone
+					materialize
+				) || warn "zone $m_zone did not materialize; run: sudo wgq -z $m_zone connect"
+			done
+		fi
 		;;
 	get)
 		[ $# -eq 0 ] || usage
-		if [ "$(qvm-features "$vpn" service.wgq-no-autoconnect 2>/dev/null || :)" = 1 ]; then
-			printf 'autoconnect: off (boots sealed until connect)\n'
-		else
-			printf 'autoconnect: on\n'
-		fi
+		g_auto=$(effective autoconnect)
+		printf 'autoconnect: %s (%s)%s\n' "${g_auto:-on}" "$(layer_of autoconnect)" \
+			"$([ "${g_auto:-on}" = off ] && printf ' -- boots sealed until connect')"
+		g_dns=$(effective dns)
+		printf 'dns:         %s (%s)\n' "${g_dns:-provider resolver}" "$(layer_of dns)"
 		if vpn_running; then
-			override=$(vpn_root 'cat /rw/config/wg/dns' 2>/dev/null || :)
-			printf 'dns:         %s\n' "${override:-provider default}"
+			g_file=$(vpn_root 'cat /rw/config/wg/dns' 2>/dev/null || :)
+			if [ "${g_file:-}" != "${g_dns:-}" ]; then
+				warn "dataplane copy ('${g_file:-none}') differs from the stored value; run: sudo wgq -z $zone connect"
+			fi
 			printf 'tunnel:      %s\n' "$(vpn_root 'cat /run/wgq/state' 2>/dev/null || printf unknown)"
 		else
-			printf 'dns:         (unknown: %s is halted)\n' "$vpn"
-			printf 'tunnel:      %s halted\n' "$vpn"
+			printf 'tunnel:      %s halted (settings apply at next connect)\n' "$vpn"
 		fi
 		;;
 	*) usage ;;

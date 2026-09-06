@@ -142,6 +142,7 @@ printf 'run %s: %s\n' "$name" "$*" >> "${QCTL_LOG:?}"
 case "$*" in
 	*"cat /run/wgq/state"*) printf 'ok peer=se-mma dns=10.64.0.1\n' ;;
 	*"cat /rw/config/wg/dns"*) exit 1 ;;
+	*"test -f /rw/config/wg/dns"*) exit 1 ;;
 esac
 EOF
 
@@ -420,6 +421,30 @@ else
 	cat "$WORK/out"
 	fail "bogus resolver refused for the wrong reason"
 fi
+
+# 11a5b. Layered settings: a global default lands in dom0's features and
+# materializes into zones without an override; a zone override wins and
+# says so; clearing the override lets the global answer again.
+if ctl --zone work set --global dns 10.64.0.1 >"$WORK/out" 2>&1 \
+	&& grep -q 'dom0|wgq.dns|10.64.0.1' "$WORK/features" \
+	&& grep -q "run sys-wgq-work: mkdir -p /rw/config/wg" "$QCTL_LOG" \
+	&& ctl --zone work get 2>/dev/null | grep -q 'dns:         10.64.0.1 (global)'; then
+	ok "a global dns default stores on dom0 and materializes into the zone"
+else
+	cat "$WORK/out"
+	fail "global dns did not layer correctly"
+fi
+if ctl --zone work set dns 9.9.9.9 >/dev/null 2>&1 \
+	&& grep -q 'sys-wgq-work|wgq.dns|9.9.9.9' "$WORK/features" \
+	&& ctl --zone work get 2>/dev/null | grep -q 'dns:         9.9.9.9 (zone override)' \
+	&& ctl --zone work set dns default >/dev/null 2>&1 \
+	&& ctl --zone work get 2>/dev/null | grep -q 'dns:         10.64.0.1 (global)'; then
+	ok "a zone override wins, and clearing it restores the global"
+else
+	ctl --zone work get 2>&1 | head -3
+	fail "override/global precedence broke"
+fi
+ctl --zone work set --global dns default >/dev/null 2>&1 || :
 
 # 11a6. The ownership rule holds for the lifecycle verbs too.
 printf 'sys-wgq-alien|AppVM|sys-firewall|True\n' >>"$FAKEQ"
