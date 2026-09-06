@@ -41,6 +41,11 @@ record what changed for the person running the tool.
 
 ### Changed
 
+- The README is a front door again: status, quickstart, and a map. The
+  full documentation moved to `docs/` — threat model, architecture,
+  install, lifecycle, verify — one file per question, versioned and
+  signed with the code they describe.
+
 - The tunnel's boot-time start moved from `wg-tunnel.service` to a new
   `wg-autoconnect.service`; `wg-tunnel` is now started only by
   autoconnect or `wgq connect`.
