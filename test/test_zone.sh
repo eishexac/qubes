@@ -297,6 +297,51 @@ else
 	fail "singleton removal went wrong"
 fi
 
+# 11a2. doctor: on this healthy fake machine every invariant holds. The
+# identity dirs are pointed at prepared stand-ins (doctor is read-only,
+# so the override exists exactly for this harness), the running zone
+# qubes have no qvm-run here, and doctor must SKIP their dataplane
+# rather than guess.
+DOCTOR=$(cd "$(dirname "$0")/.." && pwd)/wgq/dom0/wgq-doctor
+mkdir -p "$WORK/icons" "$WORK/policy" "$WORK/salt"
+for i in appvm-wgq appvm-wgq-fw appvm-wgq-mgmt servicevm-wgq servicevm-wgq-fw templatevm-wgq-tpl; do
+	: >"$WORK/icons/$i.svg"
+done
+for pol in 30-wgq 30-wgq-labels 30-wgq-creation; do
+	: >"$WORK/policy/$pol.policy"
+done
+doctor() {
+	env PATH="$WORK/bin:$PATH" WGQ_ICON_DIR="$WORK/icons" \
+		WGQ_POLICY_DIR="$WORK/policy" WGQ_SALT_DIR="$WORK/salt" \
+		WGQ_ENTRY="$DOCTOR" sh "$DOCTOR"
+}
+if doctor >"$WORK/out" 2>&1 \
+	&& grep -q 'chain sys-fw-work -> sys-wgq-work -> sys-firewall ok' "$WORK/out" \
+	&& grep -q 'dataplane checks skipped' "$WORK/out" \
+	&& grep -q 'icons 6/6 ok' "$WORK/out" \
+	&& grep -q 'nothing broken' "$WORK/out"; then
+	ok "doctor passes a healthy machine, skips what it cannot probe"
+else
+	cat "$WORK/out"
+	fail "doctor mis-judged a healthy machine"
+fi
+
+# 11a3. doctor: rewire the zone's firewall qube behind wgq's back -- the
+# exact hand-modification the no-locks design says must be DETECTED. It
+# must fail, name the break, and print the one-line repair.
+env PATH="$WORK/bin:$PATH" qvm-prefs sys-fw-work netvm sys-firewall
+if doctor >"$WORK/out" 2>&1; then
+	cat "$WORK/out"
+	fail "doctor blessed a broken chain"
+elif grep -q "clients bypass the tunnel path" "$WORK/out" \
+	&& grep -q "fix:  qvm-prefs sys-fw-work netvm sys-wgq-work" "$WORK/out"; then
+	ok "doctor catches a rewired chain and names the repair"
+else
+	cat "$WORK/out"
+	fail "doctor failed the broken chain for the wrong reason"
+fi
+env PATH="$WORK/bin:$PATH" qvm-prefs sys-fw-work netvm sys-wgq-work
+
 # 11b. list --json emits one parseable document with the zone rows, and
 # the foreign-qube note stays on stderr where a parser never sees it.
 if zone list --json >"$WORK/out" 2>/dev/null \

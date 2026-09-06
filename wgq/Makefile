@@ -34,6 +34,7 @@ SHELL_SCRIPTS := \
 	template/usr/sbin/wg-tunnel \
 	dom0/msg.sh \
 	dom0/wgq \
+	dom0/wgq-doctor \
 	dom0/wgq-verify \
 	dom0/wgq-zone \
 	dom0/wgq-uninstall \
