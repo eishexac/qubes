@@ -16,6 +16,8 @@ reads first.
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import json
 import os
 import re
 import socket
@@ -182,12 +184,31 @@ def parse_renames(pairs: list[str]) -> dict[str, str]:
 # -- commands: management qube ----------------------------------------------
 
 
+def emit_json(payload) -> None:
+    """Machine output: one JSON document on stdout, nothing else.
+
+    Stdout purity is a hard rule since the framing-on-stdout bug (#43):
+    everything human goes to stderr, so `--json` output is always
+    parseable without filtering.
+    """
+    print(json.dumps(payload, indent=2))
+
+
 def cmd_servers(args: argparse.Namespace) -> int:
     provider = get_provider(args.provider)(timeout=args.timeout)
     say(f"fetching the {args.provider} server list...")
     servers = provider.servers(args.filter)
-    for server in servers:
-        print(f"{server.name:<20} {server.endpoint:<24} {server.location}")
+    if args.json:
+        emit_json(
+            [
+                dataclasses.asdict(server)
+                | {"endpoint": server.endpoint, "location": server.location}
+                for server in servers
+            ]
+        )
+    else:
+        for server in servers:
+            print(f"{server.name:<20} {server.endpoint:<24} {server.location}")
     print(f"\n{len(servers)} server(s)", file=sys.stderr)
     return 0
 
@@ -509,6 +530,14 @@ def cmd_peer_import(args: argparse.Namespace) -> int:
 
 def cmd_peer_list(args: argparse.Namespace) -> int:
     peers = PeerDir(record_dir(require_zone(args.zone))).load_all()
+    if args.json:
+        emit_json(
+            [
+                dataclasses.asdict(peer) | {"endpoint": peer.endpoint}
+                for peer in peers
+            ]
+        )
+        return 0 if peers else 1
     if not peers:
         print("no peers recorded for this zone")
         return 1
@@ -680,6 +709,25 @@ def cmd_status(args: argparse.Namespace) -> int:
     peers = store.peer_dir().names()
     active = store.active()
     firewall = store.firewall_state()
+    # The exit code answers "is this zone healthy" for scripts, so it must
+    # include the firewall verdict: an up tunnel in front of a broken or
+    # degraded rule set is not health.
+    healthy = bool(active) and store.tunnel_up() and firewall.startswith("ok")
+    if args.json:
+        payload = {
+            "peers": peers,
+            "active": active,
+            "key_present": store.has_key(),
+            "tunnel": store.tunnel_state(),
+            "firewall": firewall,
+            "healthy": healthy,
+        }
+        if active:
+            peer = store.peer_dir().load(active)
+            payload["endpoint"] = peer.endpoint
+            payload["resolver"] = peer.dns
+        emit_json(payload)
+        return 0 if healthy else 1
     print(f"peers:    {', '.join(peers) if peers else 'none installed'}")
     print(f"active:   {active or 'none'}")
     print(f"key:      {'present' if store.has_key() else 'MISSING'}")
@@ -689,10 +737,6 @@ def cmd_status(args: argparse.Namespace) -> int:
         peer = store.peer_dir().load(active)
         print(f"endpoint: {peer.endpoint}")
         print(f"resolver: {peer.dns}")
-    # The exit code answers "is this zone healthy" for scripts, so it must
-    # include the firewall verdict: an up tunnel in front of a broken or
-    # degraded rule set is not health.
-    healthy = bool(active) and store.tunnel_up() and firewall.startswith("ok")
     return 0 if healthy else 1
 
 
@@ -742,6 +786,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--timeout", type=float, default=20.0, help="HTTP timeout, seconds")
 
     p = sub.add_parser("servers", help="list matching servers (no credential needed)")
+    p.add_argument("--json", action="store_true", help="machine output: one JSON document on stdout")
     p.add_argument("--provider", default="mullvad", choices=PROVIDERS)
     p.add_argument("--filter", help="match on hostname, country or city")
     p.add_argument("--timeout", type=float, default=20.0)
@@ -808,6 +853,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = peer_sub.add_parser("list", help="show the peers recorded for a zone")
     p.add_argument("--zone", required=True)
+    p.add_argument("--json", action="store_true", help="machine output: one JSON document on stdout")
     p.set_defaults(func=cmd_peer_list)
 
     p = peer_sub.add_parser("rm", help="forget a recorded peer")
@@ -862,6 +908,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_switch)
 
     p = sub.add_parser("status", help="[zone qube] show peer, tunnel and firewall state")
+    p.add_argument("--json", action="store_true", help="machine output: one JSON document on stdout")
     p.set_defaults(func=cmd_status)
 
     return parser
