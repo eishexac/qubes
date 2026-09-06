@@ -354,6 +354,7 @@ sudo wgq sync
 sudo wgq switch <peer>
 sudo wgq firewall --zone wgq
 sudo wgq verify --kill-rounds 3
+sudo wgq doctor
 ```
 
 The only qubes whose netvm ever changes are the ones you typed — there is
@@ -468,6 +469,12 @@ zone's client (nothing to install there, ever), runs the checks, and
 drives the kill test itself — stopping the tunnel, proving it stopped,
 probing, restarting, and proving recovery, N rounds in one run. The
 manual script below remains for zones wgq did not build.
+
+Alongside it, `sudo wgq doctor` checks every installed invariant --
+icons, policies, tags, each zone's chain, the kill switch, the absent
+fast path -- read-only, with a fix command printed for every failure.
+verify proves the dataplane holds; doctor explains what drifted when it
+does not.
 
 Run the manual script from a **client** qube — never the VPN qube, whose
 own egress to the endpoint is deliberately permitted.
