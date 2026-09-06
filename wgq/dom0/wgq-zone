@@ -34,6 +34,7 @@ usage() {
 	printf '       %s attach <zone> <qube>\n' "$PROG" >&2
 	printf '       %s detach <qube> [netvm]\n' "$PROG" >&2
 	printf '       %s list\n' "$PROG" >&2
+	printf '       %s rename <old> <new>       (migrate a zone -- including the reserved one)\n' "$PROG" >&2
 	printf '       %s remove <zone>\n' "$PROG" >&2
 	exit 2
 }
@@ -148,17 +149,20 @@ offer_name_match() {
 }
 
 cmd_add() {
-	if [ $# -eq 0 ]; then
-		printf '%s: zone name? Enter for the single-VPN default (sys-wgq + sys-fw-wgq),\n' "$PROG"
-		printf 'or type a name for a suffixed zone (sys-wgq-<name> + sys-fw-<name>): '
-		z=""
-		read -r z || true
-		[ -n "$z" ] || z=wgq
-	else
-		z=$1
-		shift
-	fi
+	# Every zone is named. The Enter-for-the-default prompt is gone: a
+	# default was the one zone the operator never chose.
+	[ $# -ge 1 ] || die "name the zone: $PROG add <name> [--upstream <netvm>] [--attach <qube>,...]"
+	z=$1
+	shift
 	check_zone "$z"
+	if [ "$z" = wgq ]; then
+		# The reserved zone can no longer be BORN; an existing one (an
+		# install from before 0.3.0) may still converge while its owner
+		# migrates.
+		qvm-check --quiet sys-fw-wgq 2>/dev/null \
+			|| die "the reserved zone cannot be created anymore; pick a real name"
+		warn "the reserved zone is deprecated; migrate with: $PROG rename wgq <name>"
+	fi
 	upstream=""
 	attach_list=""
 	while [ $# -gt 0 ]; do
@@ -212,6 +216,71 @@ cmd_add() {
 	done
 	offer_name_match "$z"
 	note "attach clients with: $PROG attach $z <qube>"
+}
+
+cmd_rename() {
+	# Qubes has no in-place rename, so this is clone-retag-rewire-remove
+	# -- with the zone dark for the duration, said up front. The private
+	# volumes travel with the clones: keys, peers and the active symlink
+	# arrive intact, so the registered provider key survives.
+	[ $# -eq 2 ] || usage
+	r_old=$1
+	r_new=$2
+	check_zone "$r_old"
+	check_zone "$r_new"
+	[ "$r_old" != "$r_new" ] || die "'$r_old' to '$r_new' is not a rename"
+	[ "$r_new" != wgq ] || die "nothing may take the reserved name"
+	r_old_vpn=$(vpn_name "$r_old")
+	r_old_fw="sys-fw-$r_old"
+	r_new_vpn="sys-wgq-$r_new"
+	r_new_fw="sys-fw-$r_new"
+	qvm-check --quiet "$r_old_fw" 2>/dev/null || die "zone '$r_old' does not exist"
+	is_ours "$r_old_fw" || die "$r_old_fw was not created by wgq; not mine to rename"
+	is_ours "$r_old_vpn" || die "$r_old_vpn was not created by wgq; not mine to rename"
+	for r_q in "$r_new_vpn" "$r_new_fw"; do
+		if qvm-check --quiet "$r_q" 2>/dev/null; then
+			die "a qube named '$r_q' already exists"
+		fi
+	done
+	r_uplink=$(qvm-prefs "$r_old_vpn" netvm 2>/dev/null | head -n1 || :)
+	r_clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
+		| awk -F'|' -v fw="$r_old_fw" '$2 == fw {print $1}' | tr '\n' ' ')
+
+	note "rename plan: $r_old_vpn -> $r_new_vpn, $r_old_fw -> $r_new_fw (clone, retag, rewire, remove)"
+	[ -n "$r_clients" ] \
+		&& note "clients ($r_clients) go DARK for the duration and follow to $r_new_fw"
+	printf 'type the new name to confirm: '
+	read -r r_ans || die "not confirmed"
+	[ "$r_ans" = "$r_new" ] || die "not confirmed"
+
+	qvm-shutdown --wait "$r_old_fw" || die "could not shut down $r_old_fw"
+	qvm-shutdown --wait "$r_old_vpn" || die "could not shut down $r_old_vpn"
+	qvm-clone "$r_old_vpn" "$r_new_vpn" || die "clone of $r_old_vpn failed; nothing was removed"
+	qvm-clone "$r_old_fw" "$r_new_fw" || die "clone of $r_old_fw failed; nothing was removed"
+	# clone copies tags on current Qubes, but the birth stamp is too
+	# load-bearing to inherit implicitly
+	qvm-tags "$r_new_vpn" add created-by-wgq
+	qvm-tags "$r_new_fw" add created-by-wgq
+	qvm-prefs "$r_new_fw" netvm "$r_new_vpn"
+	if [ -n "$r_uplink" ] && [ "$r_uplink" != '-' ]; then
+		qvm-prefs "$r_new_vpn" netvm "$r_uplink"
+	fi
+	# the mgmt bundle follows, so provision/sync keep addressing the
+	# zone by its (new) name; zone names are charset-checked, embedding
+	# them is safe
+	qvm-run --no-gui --pass-io -u user -- wgq-mgmt \
+		"if [ -d ~/.local/share/wgq/zones/$r_old ]; then mv ~/.local/share/wgq/zones/$r_old ~/.local/share/wgq/zones/$r_new; fi" \
+		|| warn "could not move the mgmt bundle; in wgq-mgmt run: mv ~/.local/share/wgq/zones/$r_old ~/.local/share/wgq/zones/$r_new"
+	for r_c in $r_clients; do
+		qvm-prefs "$r_c" netvm "$r_new_fw" \
+			|| warn "could not repoint $r_c; run: qvm-prefs $r_c netvm $r_new_fw"
+	done
+	qvm-remove -f "$r_old_fw" || die "could not remove $r_old_fw; the new zone exists, remove the old pair by hand"
+	qvm-remove -f "$r_old_vpn" || die "could not remove $r_old_vpn; the new zone exists, remove it by hand"
+	# the add path adopts the tagged clones, converges labels, features
+	# and prefs, starts the pair and materializes the settings
+	cmd_add "$r_new"
+	ok "zone '$r_old' is now '$r_new'; firewall allowlist rides along, verify when convenient: sudo wgq verify $r_new"
 }
 
 cmd_attach() {
@@ -312,6 +381,10 @@ case "${1:-}" in
 	list)
 		shift
 		cmd_list "$@"
+		;;
+	rename)
+		shift
+		cmd_rename "$@"
 		;;
 	remove)
 		shift

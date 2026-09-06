@@ -26,6 +26,13 @@ positional. See docs/lifecycle.md as sections land.
 
 - Zone names may not be `autoconnect`, `dns` or `default`: they are the
   words that let `set` tell a key from a zone.
+- `zone add` requires a name; the Enter-for-the-default prompt is gone.
+- The reserved zone `wgq` is deprecated: it can no longer be created,
+  an existing one still converges (with a warning), and
+  `zone rename wgq <name>` migrates it — clone, retag, rewire, clients
+  follow, mgmt bundle moves, registered key survives. Reading the bare
+  `sys-wgq` name ends in 0.4.0: removing it in the same release that
+  ships the migration tool would strand un-migrated machines mid-update.
 
 ## [0.2.0] — 2026-09-06
 
