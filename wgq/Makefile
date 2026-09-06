@@ -34,6 +34,7 @@ SHELL_SCRIPTS := \
 	template/usr/sbin/wg-tunnel \
 	dom0/msg.sh \
 	dom0/wgq \
+	dom0/wgq-verify \
 	dom0/wgq-zone \
 	dom0/wgq-uninstall \
 	test/verify.sh
@@ -59,6 +60,7 @@ $(DIST): $(SOURCES) $(MKZIPAPP)
 # project calls out in verify.sh: a check that cannot fail is worse than none.
 check:
 	$(PYTHON) -m compileall -q src
+	@$(PYTHON) -m py_compile dom0/verify-probes.py && printf 'probes compile ok\n'
 	@for f in $(SHELL_SCRIPTS); do \
 		sh -n "$$f" || exit 1; \
 		printf 'sh -n ok: %s\n' "$$f"; \
