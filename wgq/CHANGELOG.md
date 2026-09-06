@@ -1,0 +1,65 @@
+# Changelog
+
+Newest first. The top section is the pending version and grows as
+changes merge; releasing stamps its date and signs the tag. Entries
+record what changed for the person running the tool.
+
+## [0.2.0] — unreleased
+
+### Added
+
+- `wgq verify [-z zone] [--kill-rounds N]`: the leak checks as one dom0
+  command. Parameters are gathered from the zone, probes are pushed into
+  the client (Python stdlib only — nothing to install there), and the
+  kill test is driven end to end: stop, prove the stop, probe, restart,
+  prove recovery, N rounds. `test/verify.sh` remains for zones wgq did
+  not build.
+- `wgq doctor`: read-only check of every installed invariant — icons,
+  policies, ownership tags, each zone's chain, the kill-switch rules
+  read back, the accel fast path absent, the no-accel hook present —
+  with a fix command printed for every failure.
+- `wgq connect` / `wgq disconnect`: tunnel up and down from dom0.
+  Disconnected means dark — the kill switch stays, clients get nothing.
+- `wgq set autoconnect on|off`: autoconnect remains the default; off
+  makes the zone boot sealed (forwarding refused) until an explicit
+  connect.
+- `wgq set dns <ip>|default`: pin client DNS to a chosen resolver,
+  reached through the tunnel only. An unusable value is refused in dom0;
+  an unusable stored override falls back to the provider pin, never to
+  no pin.
+- `wgq get`: the zone's settings and tunnel state.
+- `--json` on `servers`, `peer list`, `status` and `zone list`: one
+  parseable document on stdout, human notes on stderr.
+
+### Changed
+
+- The tunnel's boot-time start moved from `wg-tunnel.service` to a new
+  `wg-autoconnect.service`; `wg-tunnel` is now started only by
+  autoconnect or `wgq connect`.
+
+### Upgrading
+
+The template changed. After `airlock apply wgq`: shut down the wgq
+template, restart the zone qubes, then check with `wgq doctor` and
+`wgq verify --kill-rounds 3`.
+
+The next release (0.3.0) retires the reserved default zone in favour of
+named zones only; that one will be breaking.
+
+## [0.1.0] — 2026-09-04
+
+First release, verified end to end on hardware before tagging.
+
+- One VPN qube per identity zone: `wgq zone add/attach/detach/remove`,
+  clients pointing at `sys-fw-<zone>`, explicit-only attachment.
+- Provisioning through wgq-mgmt (`credential`, `keygen`, `provision`,
+  `sync`, `switch`, `firewall`) for Mullvad and IVPN; the private key
+  never leaves the zone qube.
+- Kill switch installed as one atomic nftables transaction; the
+  qubes-nat-accel fast path removed from VPN qubes; client DNS pinned
+  to the active peer's resolver.
+- `test/verify.sh`: exit address, DNS pinning, the kill test.
+- Identity and ownership: named custom labels and icons, only-dom0
+  creation policies, the created-by-wgq tag with adopt-or-refuse.
+- Install path: verify the signed tag, bootstrap in a disposable,
+  `airlock pull` as a reviewed diff, `airlock apply` step by step.
