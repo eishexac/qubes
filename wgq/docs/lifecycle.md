@@ -125,7 +125,11 @@ sudo wgq -z work get                 # settings (with the layer that answered)
 ```
 
 Settings are layered: a zone override beats a global default beats the
-built-in default, and `get` names the layer every value came from. The
+built-in default, and `get` names the layer every value came from.
+An explicit value is stored even when it matches the layer below —
+`set autoconnect on` on one zone beats a global `off` — and
+`set <key> default` clears the named layer so the one beneath answers
+again. The
 stored settings (qubes features, on the zone qube or dom0) are the
 truth; what the dataplane reads is a copy pushed at `set` and
 `connect`, and `wgq doctor` fails when the two drift. A newborn zone

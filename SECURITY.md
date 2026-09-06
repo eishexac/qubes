@@ -14,10 +14,12 @@ answer, which may be "yes, and I do not know when I will fix it".
 
 ## Scope
 
-Scope is defined per project: each project's README states its threat
-model — what it defends against, and what is deliberately outside its
-design. Read it before deciding whether a behaviour is a vulnerability or
-a documented limit. For `wgq`, see [`wgq/SECURITY.md`](wgq/SECURITY.md).
+Scope is defined per project: each project documents its threat model —
+what it defends against, and what is deliberately outside its design.
+Read it before deciding whether a behaviour is a vulnerability or a
+documented limit. For `wgq`, see
+[`wgq/docs/threat-model.md`](wgq/docs/threat-model.md) and
+[`wgq/SECURITY.md`](wgq/SECURITY.md).
 
 Two things are in scope for the repository as a whole:
 

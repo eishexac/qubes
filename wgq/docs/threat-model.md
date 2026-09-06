@@ -45,8 +45,6 @@ boundary; it is a correctness backstop for the common failure.
 
 ---
 
----
-
 ## What this deliberately does not do
 
 - **Execute `qvm-firewall` without asking.** With the policy installed the

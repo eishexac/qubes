@@ -132,24 +132,47 @@ layer_of() { # which layer answered: override | global | default
 # feature was cleared -- guessing would re-arm a flag the user just
 # turned off. A pre-layering 'set autoconnect off' is re-run once.
 materialize() {
+	# Every write is explicitly guarded: inside the global fan-out's ||
+	# context, errexit is OFF (POSIX: -e is ignored throughout a command
+	# in an AND-OR list), so an unguarded failure would be silently
+	# stepped over and the zone left stale while reporting success.
 	if [ "$(effective autoconnect)" = off ]; then
-		qvm-features "$vpn" service.wgq-no-autoconnect 1
+		qvm-features "$vpn" service.wgq-no-autoconnect 1 \
+			|| die "could not set the boot flag on $vpn; the setting is stored -- run: sudo wgq -z $zone connect"
 	elif [ -n "$(qvm-features "$vpn" service.wgq-no-autoconnect 2>/dev/null || :)" ]; then
 		qvm-features --unset "$vpn" service.wgq-no-autoconnect \
 			|| die "could not clear the autoconnect flag on $vpn"
 	fi
 	vpn_running || return 0
+	m_restarted=0
 	m_dns=$(effective dns)
 	if [ -n "$m_dns" ]; then
 		is_ipv4 "$m_dns" || die "stored resolver '$m_dns' is not an IPv4 address; fix it: sudo wgq set dns <ip>"
 		m_cur=$(vpn_root 'cat /rw/config/wg/dns' 2>/dev/null || :)
 		if [ "$m_cur" != "$m_dns" ]; then
-			vpn_root "mkdir -p /rw/config/wg && printf '%s\n' '$m_dns' > /rw/config/wg/dns" >/dev/null
-			vpn_root 'systemctl restart qubes-firewall' >/dev/null
+			vpn_root "mkdir -p /rw/config/wg && printf '%s\n' '$m_dns' > /rw/config/wg/dns" >/dev/null \
+				|| die "could not write the resolver copy into $vpn; the setting is stored -- run: sudo wgq -z $zone connect"
+			vpn_root 'systemctl restart qubes-firewall' >/dev/null \
+				|| die "could not re-apply the firewall in $vpn -- run: sudo wgq doctor"
+			m_restarted=1
 		fi
 	elif vpn_root 'test -f /rw/config/wg/dns' 2>/dev/null; then
-		vpn_root 'rm -f /rw/config/wg/dns' >/dev/null
-		vpn_root 'systemctl restart qubes-firewall' >/dev/null
+		vpn_root 'rm -f /rw/config/wg/dns' >/dev/null \
+			|| die "could not remove the resolver copy in $vpn -- run: sudo wgq -z $zone connect"
+		vpn_root 'systemctl restart qubes-firewall' >/dev/null \
+			|| die "could not re-apply the firewall in $vpn -- run: sudo wgq doctor"
+		m_restarted=1
+	fi
+	# Read the result back whenever the firewall re-ran: a stored
+	# resolver that kills client DNS must fail HERE, not at the next
+	# doctor run.
+	if [ "$m_restarted" -eq 1 ]; then
+		m_state=$(vpn_root 'cat /run/wgq/state' 2>/dev/null || :)
+		case "$m_state" in
+			ok\ *) ;;
+			degraded:*) die "firewall re-applied in $vpn but reports '$m_state': forwarding is up and clients have NO DNS until a usable resolver is set" ;;
+			*) die "firewall re-apply in $vpn reports '${m_state:-nothing}'; the zone sealed itself -- run: sudo wgq doctor" ;;
+		esac
 	fi
 }
 
@@ -194,7 +217,7 @@ case "$verb" in
 		value=$2
 		case "$key" in
 			autoconnect)
-				case "$value" in on | off) ;; *) die "autoconnect is on or off, not '$value'" ;; esac
+				case "$value" in on | off | default) ;; *) die "autoconnect is on, off or default, not '$value'" ;; esac
 				;;
 			dns)
 				if [ "$value" != default ]; then
@@ -204,15 +227,17 @@ case "$verb" in
 			*) die "unknown setting '$key' (autoconnect, dns)" ;;
 		esac
 		# Store at the named layer; 'default' clears that layer so the
-		# one beneath answers again.
+		# one beneath answers again. An explicit value is stored even
+		# when it matches the layer below: 'set autoconnect on' on one
+		# zone must be able to beat a global 'off'.
 		target=$vpn
 		[ "$layer" = global ] && target=dom0
-		if [ "$value" = default ] || { [ "$key" = autoconnect ] && [ "$value" = on ] && [ "$layer" = zone ]; }; then
+		if [ "$value" = default ]; then
 			if [ -n "$(qvm-features "$target" "wgq.$key" 2>/dev/null || :)" ]; then
 				qvm-features --unset "$target" "wgq.$key" \
 					|| die "could not clear wgq.$key on $target"
 			fi
-			ok "$layer $key cleared; the $([ "$layer" = zone ] && printf 'global (or default)' || printf 'built-in default') answers now"
+			ok "$layer $key cleared; the $([ "$layer" = zone ] && printf 'global (or built-in) default' || printf 'built-in default') answers now"
 		else
 			qvm-features "$target" "wgq.$key" "$value"
 			ok "$layer $key = $value"
@@ -254,8 +279,9 @@ case "$verb" in
 		g_dns=$(effective dns)
 		printf 'dns:         %s (%s)\n' "${g_dns:-provider resolver}" "$(layer_of dns)"
 		if vpn_running; then
-			g_file=$(vpn_root 'cat /rw/config/wg/dns' 2>/dev/null || :)
-			if [ "${g_file:-}" != "${g_dns:-}" ]; then
+			g_file=$(vpn_root 'cat /rw/config/wg/dns 2>/dev/null || echo __none__' 2>/dev/null || :)
+			[ "$g_file" = __none__ ] && g_file=''
+			if [ -n "${g_file}${g_dns}" ] && [ "${g_file:-}" != "${g_dns:-}" ]; then
 				warn "dataplane copy ('${g_file:-none}') differs from the stored value; run: sudo wgq -z $zone connect"
 			fi
 			printf 'tunnel:      %s\n' "$(vpn_root 'cat /run/wgq/state' 2>/dev/null || printf unknown)"

@@ -261,7 +261,15 @@ def main(argv: list[str]) -> int:
     if mode == "exitip":
         result = exit_ip()
     elif mode == "stun":
-        result = stun_probe(*rest[:1], *[int(p) for p in rest[1:2]])
+        # Bad argv degrades to a JSON error like every other failure --
+        # this file's contract is one document on stdout, never a
+        # traceback (int() raises ValueError; sendto raises
+        # OverflowError on an out-of-range port, which is neither
+        # OSError nor ValueError).
+        try:
+            result = stun_probe(*rest[:1], *[int(p) for p in rest[1:2]])
+        except Exception as exc:  # noqa: BLE001
+            result = {"ok": False, "error": str(exc)}
     elif mode == "dnscheck":
         result = mode_dnscheck(rest)
     elif mode == "killcheck":

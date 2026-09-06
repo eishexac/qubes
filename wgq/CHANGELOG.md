@@ -33,6 +33,8 @@ record what changed for the person running the tool.
   a global default applies to every zone without its own value, stored
   as features on dom0, materialized into the zones at set and connect,
   and checked for drift by doctor. New zones inherit globals at birth.
+  An explicit zone value beats the global even when they agree, and
+  `set <key> default` clears a layer.
 - A STUN probe joins `wgq verify` (check 1b): the public address a STUN
   server sees over UDP must match the tunnel exit -- the WebRTC leak
   question answered at the layer this tool controls.

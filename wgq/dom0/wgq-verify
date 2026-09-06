@@ -102,6 +102,28 @@ if [ -z "$client" ]; then
 fi
 qvm-check --quiet "$client" 2>/dev/null || die "no such qube '$client'"
 
+# Everything a qube prints is untrusted input: strip it to a safe
+# charset before it touches a dom0 terminal or another qvm-run.
+sanitize() { tr -cd 'a-zA-Z0-9 .,:=_/-'; }
+
+is_ipv4() {
+	case "$1" in
+		'' | *[!0-9.]* | .* | *. | *..*) return 1 ;;
+		0[0-9]* | *.0[0-9]*) return 1 ;;
+	esac
+	oldifs=$IFS
+	IFS=.
+	# shellcheck disable=SC2086 # deliberate word splitting on IFS
+	set -- $1
+	IFS=$oldifs
+	[ $# -eq 4 ] || return 1
+	for octet in "$@"; do
+		[ -n "$octet" ] || return 1
+		[ "$octet" -le 255 ] 2>/dev/null || return 1
+	done
+	return 0
+}
+
 # One JSON field out of a probe result, or empty on any parse trouble.
 jfield() {
 	python3 -c '
@@ -157,28 +179,6 @@ case "$state" in
 esac
 resolver=${state##*dns=}
 
-# Everything a qube prints is untrusted input: strip it to a safe
-# charset before it touches a dom0 terminal or another qvm-run.
-sanitize() { tr -cd 'a-zA-Z0-9 .,:=_/-'; }
-
-is_ipv4() {
-	case "$1" in
-		'' | *[!0-9.]* | .* | *. | *..*) return 1 ;;
-		0[0-9]* | *.0[0-9]*) return 1 ;;
-	esac
-	oldifs=$IFS
-	IFS=.
-	# shellcheck disable=SC2086 # deliberate word splitting on IFS
-	set -- $1
-	IFS=$oldifs
-	[ $# -eq 4 ] || return 1
-	for octet in "$@"; do
-		[ -n "$octet" ] || return 1
-		[ "$octet" -le 255 ] 2>/dev/null || return 1
-	done
-	return 0
-}
-
 endpoint=$(vpn_root 'wg show wg0 endpoints' | awk 'NR==1 {print $2}' | sanitize || :)
 ep_ip=${endpoint%:*}
 ep_port=${endpoint##*:}
@@ -229,6 +229,8 @@ if [ "$stun_ok" != 1 ]; then
 	report SKIP 1b "no STUN answer (blocked upstream?); UDP exit unproven"
 elif [ -n "$clearnet" ] && [ "$stun_ip" = "$clearnet" ]; then
 	report FAIL 1b "STUN sees the CLEARNET address $stun_ip: UDP escapes the tunnel (WebRTC would leak)"
+elif [ -z "$stun_ip" ]; then
+	report SKIP 1b "STUN answered but the address did not parse; UDP exit unproven"
 elif [ -n "$exit_ip" ] && [ "$stun_ip" = "$exit_ip" ]; then
 	report PASS 1b "UDP exit $stun_ip matches the tunnel exit (WebRTC-safe)"
 else
