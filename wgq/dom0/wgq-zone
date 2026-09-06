@@ -222,7 +222,14 @@ cmd_detach() {
 }
 
 cmd_list() {
+	# --json: one JSON document on stdout, notes stay on stderr. Safe to
+	# assemble with printf because every embedded name is already charset-
+	# checked (zones [a-z0-9-], qube names [A-Za-z0-9_.-]): no quotes, no
+	# backslashes, nothing JSON needs escaped.
+	l_json=0
+	[ "${1:-}" = "--json" ] && l_json=1
 	found=0
+	l_out=''
 	for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
 		if ! is_ours "$fw"; then
 			note "$fw exists but was not created by wgq; not listed as a zone"
@@ -232,8 +239,19 @@ cmd_list() {
 		lz=${fw#sys-fw-}
 		clients=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null \
 			| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
-		printf '%-21s  vpn=%s  clients: %s\n' "$lz" "$(vpn_name "$lz")" "${clients:-none}"
+		if [ "$l_json" -eq 1 ]; then
+			l_clients=''
+			for c in $clients; do
+				l_clients="${l_clients:+$l_clients, }\"$c\""
+			done
+			l_row=$(printf '{"zone": "%s", "vpn": "%s", "fw": "%s", "clients": [%s]}' \
+				"$lz" "$(vpn_name "$lz")" "$fw" "$l_clients")
+			l_out="${l_out:+$l_out, }$l_row"
+		else
+			printf '%-21s  vpn=%s  clients: %s\n' "$lz" "$(vpn_name "$lz")" "${clients:-none}"
+		fi
 	done
+	[ "$l_json" -eq 1 ] && printf '[%s]\n' "$l_out"
 	[ "$found" -eq 1 ] || note "no zones exist; create one with: $PROG add <zone>"
 }
 

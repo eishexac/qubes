@@ -297,6 +297,23 @@ else
 	fail "singleton removal went wrong"
 fi
 
+# 11b. list --json emits one parseable document with the zone rows, and
+# the foreign-qube note stays on stderr where a parser never sees it.
+if zone list --json >"$WORK/out" 2>/dev/null \
+	&& python3 -c "
+import json, sys
+rows = json.load(open('$WORK/out'))
+assert isinstance(rows, list), rows
+for r in rows:
+	assert set(r) == {'zone', 'vpn', 'fw', 'clients'}, r
+	assert isinstance(r['clients'], list), r
+"; then
+	ok "list --json parses and carries zone, vpn, fw, clients"
+else
+	cat "$WORK/out"
+	fail "list --json is not clean parseable JSON"
+fi
+
 # 12. A stranger's qube sharing the sys-fw-* grammar is not a zone: not
 # listed, not routed through, not destroyed. The created-by-wgq tag
 # stamped at creation is the proof; a name proves nothing.

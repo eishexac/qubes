@@ -92,3 +92,73 @@ class TestDom0Detection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestJsonOutput(unittest.TestCase):
+    """--json emits exactly one parseable document on stdout.
+
+    Stdout purity is load-bearing: the dom0 pickers and wgq verify will
+    parse this without filtering, and the framing-on-stdout bug (#43)
+    is the cautionary tale for letting anything else leak in.
+    """
+
+    def run_cli(self, argv, env):
+        import contextlib
+        import os as _os
+
+        old = {k: _os.environ.get(k) for k in env}
+        _os.environ.update(env)
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with redirect_stdout(out), redirect_stderr(err):
+                with contextlib.suppress(SystemExit):
+                    code = cli.main(argv)
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+        return code, out.getvalue(), err.getvalue()
+
+    def test_peer_list_json_is_pure_and_complete(self):
+        import json
+        import tempfile
+
+        from wgq.peers import Peer, PeerDir
+
+        with tempfile.TemporaryDirectory() as tmp:
+            peers = PeerDir(f"{tmp}/zones/t/peers")
+            peers.ensure()
+            peers.save(
+                Peer(
+                    name="se-mma-wg-001",
+                    provider="mullvad",
+                    address="10.66.1.2/32",
+                    server_pubkey="X5yVvKMhFH6Grup699IfUn/RJ2XA9NkzHTbXilLBNBI=",
+                    endpoint_ip="185.65.135.170",
+                    endpoint_port=51820,
+                    dns="10.64.0.1",
+                )
+            )
+            code, out, _ = self.run_cli(
+                ["peer", "list", "--zone", "t", "--json"], {"WGQ_STATE_DIR": tmp}
+            )
+            self.assertEqual(code, 0)
+            data = json.loads(out)  # would raise on ANY stray stdout text
+            self.assertEqual(len(data), 1)
+            row = data[0]
+            self.assertEqual(row["name"], "se-mma-wg-001")
+            self.assertEqual(row["endpoint"], "185.65.135.170:51820")
+            self.assertEqual(row["dns"], "10.64.0.1")
+
+    def test_peer_list_json_empty_zone_is_empty_document(self):
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, _ = self.run_cli(
+                ["peer", "list", "--zone", "empty", "--json"], {"WGQ_STATE_DIR": tmp}
+            )
+            self.assertEqual(code, 1)
+            self.assertEqual(json.loads(out), [])
