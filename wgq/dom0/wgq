@@ -154,9 +154,33 @@ run_in() {
 
 zone=wgq
 PANIC_ONE=0
+# `-z <zone>` is accepted ANYWHERE on the line: the zone is the
+# sentence's subject, and word order must never change meaning --
+# `wgq sync -z work` and `wgq -z work sync` are the same command.
+# Only the short -z is collected globally: `--zone` AFTER a verb
+# belongs to that verb's own CLI inside the qube (provision --zone ...
+# passes through untouched); a LEADING --zone still addresses the
+# dispatcher, as it always has.
+pending_zone=0
+rebuilt=0
+for arg; do
+	[ "$rebuilt" -eq 0 ] && {
+		set --
+		rebuilt=1
+	}
+	if [ "$pending_zone" -eq 1 ]; then
+		zone=$arg PANIC_ONE=1 pending_zone=0
+		continue
+	fi
+	case "$arg" in
+		-z) pending_zone=1 ;;
+		*) set -- "$@" "$arg" ;;
+	esac
+done
+[ "$pending_zone" -eq 0 ] || usage
 while [ $# -gt 0 ]; do
 	case "$1" in
-		-z | --zone)
+		--zone)
 			[ $# -ge 2 ] || usage
 			zone=$2
 			PANIC_ONE=1

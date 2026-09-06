@@ -194,6 +194,27 @@ else
 	fail "framing leaked onto stdout -- a piped key would be corrupted"
 fi
 
+# -z reads the same in any position: after the verb must equal before
+# it, and the framed target must prove the zone was heard.
+if wgq status -z work >"$WORK/out" 2>&1 \
+	&& grep -q "sys-wgq-work" "$QLOG"; then
+	ok "-z after the verb still addresses the zone"
+else
+	cat "$WORK/out" "$QLOG" 2>/dev/null
+	fail "post-verb -z was dropped"
+fi
+
+# --zone AFTER a management verb is that verb's own flag: it must pass
+# through into the framed remote command, never be eaten by the
+# dispatcher.
+if wgq provision --zone work --provider ivpn >"$WORK/out" 2>&1 \
+	&& grep -q -- "wgq-mgmt wgq 'provision' '--zone' 'work' '--provider' 'ivpn'" "$QLOG"; then
+	ok "post-verb --zone passes through to the verb untouched"
+else
+	cat "$WORK/out" "$QLOG" 2>/dev/null
+	fail "post-verb --zone was eaten or mangled"
+fi
+
 if [ "$failures" -gt 0 ]; then
 	printf '%s failure(s)\n' "$failures"
 	exit 1
