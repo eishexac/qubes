@@ -5,7 +5,8 @@ text: two Salt states and two lines of qrexec policy.
 
 The short path: in a disposable, verify and pin the signed release
 (`gpg --locate-keys hexac@existin.space`, check the fingerprint against the repository root's
-SECURITY.md, `git verify-tag wgq-v0.1.0 && git checkout wgq-v0.1.0` —
+SECURITY.md, `git verify-tag wgq-v0.2.0 && git checkout wgq-v0.2.0` (or the
+newest release tag) —
 see the collection README), run `sh bootstrap.sh wgq` at the repository
 root, then `airlock pull` and `airlock apply wgq` in dom0. The steps
 below are the manual equivalent, and exactly what `apply` runs for you,
@@ -95,11 +96,13 @@ six `*-wgq*.svg` files.
 
 ## Updating the airlock itself
 
-The airlock validates a plan in full before running any of it, so a
-plan verb newer than the installed tool is refused up front with
-nothing half-applied. The fix is the first-install flow again: stream
-the new file out of the qube, read the diff, `install` it, re-run
-`apply`.
+The airlock updates itself where updates arrive: every `pull` fetches
+the repo's own `dom0/airlock` first and, when it differs from the
+installed tool, shows the diff and offers to install it before
+anything else — one accepted yes re-runs the pull with the new tool.
+(A plan verb newer than the installed tool is still refused whole if
+you decline; the manual fallback is the first-install flow: stream the
+file out of the qube, read the diff, `install` it.)
 
 ## Uninstall
 

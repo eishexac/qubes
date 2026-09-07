@@ -42,6 +42,12 @@ behind it have no effect.
 
 ## Identity and ownership
 
+Beside the desktop identity below, each zone wears a **console
+colour** — assigned at `zone add`, unique across zones, painting the
+zone's name in `zone list`, the picker, `tree` and `top`. It is a
+feature on the VPN qube, not a label: the desktop identity (labels,
+icons) is deliberately unchanged by it.
+
 **Identity.** wgq qubes wear their own Qubes labels — `wgq` (red, like
 sys-net: the edge), `wgq-fw` (green, like sys-firewall: the filter),
 `wgq-mgmt` (yellow) and `wgq-tpl` (black, like stock templates) —

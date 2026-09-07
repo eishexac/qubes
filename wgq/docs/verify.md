@@ -25,11 +25,15 @@ qvm-copy test/verify.sh          # into a client qube
             --provider mullvad --peer se-mma-wg-001
 ```
 
-Four checks:
+Five checks:
 
 1. The public address is the tunnel exit. **Needs an anchor** —
    `--provider mullvad`, `--exit-ip`, or `--clearnet-ip`. Without one it
    reports SKIP, because a check that cannot fail is worse than no check.
+1b. (wgq verify only) The UDP path exits where the TCP path does: a
+   STUN binding must see the tunnel exit — the WebRTC-leak question
+   answered as a proof. Clearnet match fails; no answer is an honest
+   SKIP.
 2. Client DNS is pinned. Proven by aiming a query at `192.0.2.1`
    (TEST-NET-1, which can never legitimately answer): a reply means the DNAT
    is intercepting, so a client that sets its own resolver cannot escape it.
