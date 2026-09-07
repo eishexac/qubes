@@ -2,19 +2,17 @@
 
 ## The most useful thing you can send
 
-**Output from real hardware.** This has never been run, and the two claims it
-most depends on are unverified. If you have a Qubes 4.3 machine, either of
-these is worth more than a patch:
+**Output from real hardware that is not the author's.** wgq has run end
+to end on exactly one machine (Qubes 4.3, live IVPN account — see the
+README's Status). What is still unobserved is worth more than a patch:
 
-1. What `qvm-firewall <qube> reset && qvm-firewall <qube> list` actually
-   prints on a fresh qube. The emitted command block is derived from
-   `qubesadmin/tools/qvm_firewall.py`, where `reset` installs a single
-   `action=accept` rule. If the real output differs, the block is wrong and
-   so is the README.
-
-2. Whether the `admin.vm.firewall.Set` grant in `dom0/30-wgq.policy` works as
-   written, and whether the `ask` prompt names the source and target qube
-   the way the file claims.
+1. The Mullvad backend against a live account (it is source-verified
+   only).
+2. A server retirement mid-life: what `sync`/`switch` do when a
+   provisioned peer disappears from the provider.
+3. Any run on hardware that is not the author's — especially
+   `sudo wgq verify --kill-rounds 3` output, pass or fail. A report
+   that arrives as a failing check is worth two that arrive as prose.
 
 Paste the raw output into an issue. Do not tidy it up.
 

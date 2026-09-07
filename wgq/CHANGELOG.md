@@ -60,6 +60,22 @@ positional. See docs/lifecycle.md as sections land.
 
 ### Fixed
 
+- External review, all findings fixed: the root README and
+  CONTRIBUTING still claimed wgq had never run on hardware — both now
+  tell the truth, and CONTRIBUTING's most-wanted list asks for what is
+  actually still unobserved (Mullvad live, server retirement, any
+  machine that is not the author's). The airlock vets an incoming
+  archive by listing **before** extraction (regular files and
+  directories only, no absolute or dot-dot paths, `--no-same-owner`) —
+  root in dom0 no longer leans on tar's own symlink handling against a
+  hostile qube; a dead qube now reports as a failed transfer instead
+  of "payload is not a readable tar"; an oversize payload refuses
+  loudly at the same gate; a dead pre-rename self-update block is
+  gone. Approval receipts now hash file **modes** along with contents,
+  so a post-approval `chmod +x` is drift and is refused — note: the
+  first pull after updating the airlock re-approves each project once,
+  since old receipts used the contents-only hash.
+
 - `wgq uninstall` resets system routes (updatevm, clockvm,
   default_netvm) and clears the global settings before removing zones —
   a qube still serving as updatevm cannot be removed, so an uninstall

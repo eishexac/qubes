@@ -13,7 +13,7 @@ and the security control for everything that crosses into dom0 is that
 
 | Project | What it is | Status |
 |---|---|---|
-| [`wgq/`](wgq/) | Leak-tight WireGuard proxy qubes: one VPN qube per identity zone, endpoint allowlist enforced outside the qube it constrains | never run on hardware; design under review |
+| [`wgq/`](wgq/) | Leak-tight WireGuard proxy qubes: one VPN qube per identity zone, endpoint allowlist enforced outside the qube it constrains | 0.2.0 released; validated end to end on Qubes 4.3 hardware (one author, one machine — see its README's Status) |
 
 Each project carries its own README, threat model, and status banner. A
 project's warnings are its own: one being well-tested says nothing about
