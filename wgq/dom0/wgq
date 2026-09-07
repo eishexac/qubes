@@ -54,6 +54,7 @@ usage() {
 	printf '       %s panic [-z <zone>]         (EMERGENCY: kill + block every zone, or one)\n' "$PROG" >&2
 	printf '       %s verify [zone] [--kill-rounds N]  (prove the zone leak-tight)\n' "$PROG" >&2
 	printf '       %s doctor                    (check every wgq invariant, with fixes)\n' "$PROG" >&2
+	printf '       %s tree                      (every zone: chain, health, colour, routes)\n' "$PROG" >&2
 	printf '       %s restart [zone]            (offered shutdown/start cycle after updates)\n' "$PROG" >&2
 	printf '       %s route [list|<role> <zone>|default]  (system traffic, your choice of zone)\n' "$PROG" >&2
 	printf '       %s connect|disconnect [zone]  (aliases up|down; dark -- never clear)\n' "$PROG" >&2
@@ -304,6 +305,11 @@ case "$verb" in
 		shift
 		WGQ_PROG="$PROG doctor" export WGQ_PROG
 		exec "$wgq_here/wgq-doctor" "$@"
+		;;
+	tree)
+		shift
+		WGQ_PROG="$PROG tree" export WGQ_PROG
+		exec "$wgq_here/wgq-tree" "$@"
 		;;
 	route)
 		shift

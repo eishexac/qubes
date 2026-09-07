@@ -29,6 +29,11 @@ positional. See docs/lifecycle.md as sections land.
   stored as a feature on the VPN qube, travels through `rename`, and
   is freed by `remove`. Icons and qube labels are deliberately
   untouched.
+- `wgq tree`: the whole topology on one screen — every zone as a
+  painted chain (uplink → VPN qube → firewall → clients) with its
+  tunnel state read from the qube that knows, the autoconnect stance,
+  chained zones marked, and the system routes as the footer.
+  Read-only; halted qubes are never started to be asked.
 - `wgq route`: Qubes' system-level network consumers — dom0 updates,
   template updates, clock sync, new qubes' default netvm — routed
   through a zone of your choosing, one grammar, `route list` as the

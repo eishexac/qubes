@@ -191,6 +191,10 @@ zone `wgq` (bare `sys-wgq` + `sys-fw-wgq`) keeps working while
 deprecated: migrate it with `zone rename wgq <name>`; reading the bare
 name ends in 0.4.0.
 
+`sudo wgq tree` draws the whole topology on one screen: every zone as
+a painted chain with its live tunnel state, clients, and the system
+routes as the footer.
+
 **System services** are a consumer decision, one grammar:
 
 ```sh
