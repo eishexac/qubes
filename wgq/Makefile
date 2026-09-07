@@ -64,6 +64,9 @@ $(DIST): $(SOURCES) $(MKZIPAPP)
 check:
 	$(PYTHON) -m compileall -q src
 	@$(PYTHON) -m py_compile dom0/verify-probes.py && printf 'probes compile ok\n'
+	@for i in dom0/icons/*.svg; do \
+		head -c 100 "$$i" | grep -q '<svg' || { printf '%s buries its <svg> tag past byte 100 -- GTK format sniffing (gdk-pixbuf) will not recognize it and icons go blank in GTK apps\n' "$$i"; exit 1; }; \
+	done; printf 'icons sniffable ok\n'
 	@for t in dom0/wgq dom0/wgq-ctl dom0/wgq-doctor dom0/wgq-restart dom0/wgq-uninstall dom0/wgq-verify dom0/wgq-zone; do \
 		[ -x "$$t" ] || { printf '%s is not executable -- the dispatcher exec hits permission denied in dom0\n' "$$t"; exit 1; }; \
 	done; printf 'dom0 tools executable ok\n'
