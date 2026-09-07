@@ -60,11 +60,10 @@ until the API refuses with its session-limit status.
 
 Direction settled, not yet built:
 
-- **Named zones only.** The reserved default zone `wgq` (bare `sys-wgq`
-  + `sys-fw-wgq`) will be retired: every zone gets a chosen name, no
-  hidden default to reach for. Explicitness won every argument it was
-  in during the hardware runs; the singleton is the last implicit thing
-  left.
+- **Named zones only** — shipped in 0.3.0: every zone gets a chosen
+  name, the reserved default can no longer be created, and
+  `zone rename wgq <name>` migrates an existing one. Reading the bare
+  `sys-wgq` name ends in 0.4.0.
 - **An interactive server picker.** `provision`/`switch` today take
   `--filter`/`--server`/`--count`; the plan is a drill-down menu —
   country, city, server — over the fetched list, stdlib only.
@@ -82,15 +81,19 @@ Install through the airlock ([docs/install.md](docs/install.md)), then
 the whole lifecycle is dom0 commands:
 
 ```sh
+sudo wgq zone add work                 # every zone is named; picks a colour too
 sudo wgq credential ivpn
-sudo wgq keygen
-sudo wgq pubkey | sudo wgq provision --provider ivpn --zone wgq
-sudo wgq sync
-sudo wgq switch <peer>
-sudo wgq firewall --zone wgq
-sudo wgq verify --kill-rounds 3
+sudo wgq keygen work
+sudo wgq pubkey work | sudo wgq provision --provider ivpn --zone work
+sudo wgq sync work
+sudo wgq switch work <peer>
+sudo wgq firewall --zone work
+sudo wgq verify work --kill-rounds 3
 sudo wgq doctor
 ```
+
+The zone is the first argument of every zone verb; leave it off on a
+terminal and a picker asks — never a guess.
 
 Point clients at `sys-fw-<zone>` and they inherit fail-closed: tunnel
 down means they get nothing, never clear traffic.

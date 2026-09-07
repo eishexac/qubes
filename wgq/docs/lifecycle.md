@@ -104,8 +104,8 @@ The same entrypoint reaches the other qubes without opening their
 terminals -- it frames a `qvm-run` you could type yourself, and prints
 it before running: `wgq provision ...` (and every other management
 verb) lands in wgq-mgmt; `wgq [-z <zone>] keygen|pubkey|apply|switch|
-status` lands in the zone's VPN qube, defaulting to the single-VPN
-zone `wgq`. Two dom0-only verbs close the flow's remaining gaps:
+status` lands in the zone's VPN qube named by the positional (or
+picked) zone. Two dom0-only verbs close the flow's remaining gaps:
 `wgq credential <provider>` stores the account id into wgq-mgmt (typed
 hidden in dom0, piped straight into the qube, never on any other
 disk), and `wgq sync` streams the peer bundle from wgq-mgmt into the
@@ -115,10 +115,10 @@ lifecycle, from dom0:
 ```sh
 sudo wgq credential ivpn
 sudo wgq keygen
-sudo wgq pubkey | sudo wgq provision --provider ivpn --zone wgq
+sudo wgq pubkey work | sudo wgq provision --provider ivpn --zone work
 sudo wgq sync
 sudo wgq switch <peer>
-sudo wgq firewall --zone wgq
+sudo wgq firewall --zone work
 sudo wgq verify --kill-rounds 3
 sudo wgq doctor
 ```
@@ -141,13 +141,13 @@ by hand. `sudo wgq restart <zone>` bounces one zone's pair.
 The tunnel connects at boot by default. Both halves are yours to drive:
 
 ```sh
-sudo wgq -z work disconnect          # zone goes DARK -- kill switch stays,
+sudo wgq disconnect work             # zone goes DARK -- kill switch stays,
                                      # clients get nothing, never clear traffic
-sudo wgq -z work connect             # tunnel up again, state read back
-sudo wgq -z work set autoconnect off # boot sealed; configure first, then connect
-sudo wgq -z work set dns 10.64.0.1   # pin client DNS to a chosen resolver
+sudo wgq connect work                # tunnel up again, state read back
+sudo wgq set work autoconnect off    # boot sealed; configure first, then connect
+sudo wgq set work dns 10.64.0.1      # pin client DNS to a chosen resolver
 sudo wgq set --global dns 10.64.0.1  # default for every zone without its own
-sudo wgq -z work get                 # settings (with the layer that answered)
+sudo wgq get work                    # settings (with the layer that answered)
 ```
 
 Settings are layered: a zone override beats a global default beats the
@@ -185,12 +185,11 @@ are legitimate:
 - **one zone per identity**: the reason zones exist
 - **a dedicated infra zone** for system traffic, separate from identities
 
-The single-VPN setup has first-class naming: bare `wgq zone add` asks for
-a zone name, and plain Enter takes the reserved zone `wgq`, whose qubes
-are the unsuffixed `sys-wgq` plus `sys-fw-wgq`. Internally it is still a
-named zone — `--zone wgq` everywhere — so the tag, the policy and the
-tooling keep one grammar, and growing into a second, suffixed zone later
-renames nothing and re-points no client.
+Every zone is named — `zone add` requires it, and there is no default
+to reach for. An install from before 0.3.0 that still runs the reserved
+zone `wgq` (bare `sys-wgq` + `sys-fw-wgq`) keeps working while
+deprecated: migrate it with `zone rename wgq <name>`; reading the bare
+name ends in 0.4.0.
 
 **System services**, if you want them tunnelled, point at a zone's
 firewall qube like anything else — picking *which* zone is the decision

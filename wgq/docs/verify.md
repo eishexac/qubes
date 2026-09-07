@@ -2,8 +2,8 @@
 
 This is the part nobody ships, and it matters more than the rest.
 
-The one-command way, from dom0: `sudo wgq verify [-z <zone>]
-[--kill-rounds N]`. It gathers the endpoint and resolver from the zone,
+The one-command way, from dom0: `sudo wgq verify [zone]
+[--kill-rounds N]` (no zone on a terminal: the picker asks). It gathers the endpoint and resolver from the zone,
 the clearnet address from wgq-mgmt, pushes stdlib-Python probes into the
 zone's client (nothing to install there, ever), runs the checks, and
 drives the kill test itself — stopping the tunnel, proving it stopped,
