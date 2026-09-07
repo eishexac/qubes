@@ -638,11 +638,14 @@ fi
 # escapes.
 TREE=$(cd "$(dirname "$0")/.." && pwd)/wgq/dom0/wgq-tree
 if env PATH="$WORK/bin:$PATH" WGQ_POLICY_DIR="$WORK/policy" sh "$TREE" >"$WORK/out" 2>&1 \
-	&& grep -q 'zone work  ok peer=se-mma' "$WORK/out" \
-	&& grep -q 'sys-firewall -> sys-wgq-work -> sys-fw-work' "$WORK/out" \
+	&& grep -q '^sys-net$' "$WORK/out" \
+	&& grep -q '└─ sys-firewall' "$WORK/out" \
+	&& grep -q '├─ zone work' "$WORK/out" \
+	&& grep -q 'ok peer=se-mma' "$WORK/out" \
+	&& grep -q 'sys-wgq-work ─ sys-fw-work' "$WORK/out" \
 	&& grep -q 'routes: dom0-updates sys-firewall | template-updates stock' "$WORK/out" \
 	&& ! grep -q '\033' "$WORK/out"; then
-	ok "tree draws the chain, the health, and the routes, plainly for pipes"
+	ok "tree draws the rooted forest, the health, and the routes"
 else
 	cat "$WORK/out"
 	fail "the tree went wrong"
@@ -652,12 +655,12 @@ fi
 # counter front and centre.
 TOP=$(cd "$(dirname "$0")/.." && pwd)/wgq/dom0/wgq-top
 if env PATH="$WORK/bin:$PATH" sh "$TOP" work --once >"$WORK/out" 2>&1 \
-	&& grep -q 'zone work  ok peer=se-mma' "$WORK/out" \
-	&& grep -q 'handshake: 12s ago' "$WORK/out" \
-	&& grep -q 'kill-switch drops: 42' "$WORK/out" \
-	&& grep -q 'rx 1.0 MB/s (total 1.0 MB)' "$WORK/out" \
+	&& grep -q 'zone work' "$WORK/out" \
+	&& grep -q 'ok peer=se-mma dns=10.64.0.1 · hs 12s' "$WORK/out" \
+	&& grep -q 'drops 42' "$WORK/out" \
+	&& grep -q 'rx' "$WORK/out" \
 	&& ! grep -q '\033' "$WORK/out"; then
-	ok "top --once snapshots handshake, rates and drops, plainly"
+	ok "top --once snapshots state, handshake age and drops, plainly"
 else
 	cat "$WORK/out"
 	fail "top --once went wrong"

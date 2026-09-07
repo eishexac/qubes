@@ -1,17 +1,17 @@
 #!/bin/sh
 #
-# wgq-top - one zone's tunnel, live.
+# wgq-top - every tunnel, live, full screen.
 #
-#     sudo wgq top <zone>            # live panel, Ctrl-C leaves
-#     sudo wgq top <zone> --once     # one plain snapshot (scriptable)
+#     sudo wgq top               # the dashboard: all zones, htop-style
+#     sudo wgq top <zone>        # one zone only
+#     sudo wgq top <zone> --once # one plain snapshot (scriptable)
 #
-# Handshake age, transfer rates, and the kill-switch drop counter --
-# the number that says the seal is WORKING, not just installed: every
-# packet a client tried to push outside the tunnel, counted live.
-#
-# One streaming loop runs INSIDE the qube and dom0 only renders; a
-# qvm-run per sample would pay qrexec setup every tick (the design
-# page's one implementation commandment for this tool).
+# The whole forest at once: each zone's health, handshake age, transfer
+# rates with sparklines, per-client traffic read from the vif counters
+# inside the VPN qube, and the kill-switch drop counter -- the number
+# that says the seal is WORKING, counted live. One streaming sampler
+# loop runs INSIDE each running zone's qube (framed once); dom0 only
+# renders. 'q' or Ctrl-C leaves; the zones are untouched.
 
 set -eu
 
@@ -23,32 +23,26 @@ case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
 INTERVAL=${WGQ_TOP_INTERVAL:-2}
 
 usage() {
-	printf 'usage: %s <zone> [--once]\n' "$PROG" >&2
+	printf 'usage: %s [zone] [--once]\n' "$PROG" >&2
 	exit 2
 }
 
-zone=''
+only=''
 once=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--once) once=1 ;;
 		-*) usage ;;
 		*)
-			[ -z "$zone" ] || usage
-			zone=$1
+			[ -z "$only" ] || usage
+			only=$1
 			;;
 	esac
 	shift
 done
-[ -n "$zone" ] || usage
-case "$zone" in
-	*[!a-z0-9-]*) die "unusable zone name '$zone'" ;;
+case "$only" in
+	*[!a-z0-9-]*) die "unusable zone name '$only'" ;;
 esac
-vpn="sys-wgq-$zone"
-[ "$zone" = wgq ] && vpn=sys-wgq
-
-qvm-check --quiet "sys-fw-$zone" 2>/dev/null || die "zone '$zone' does not exist"
-qvm-check --quiet --running "$vpn" 2>/dev/null || die "$vpn is halted; nothing to watch (sudo wgq connect $zone)"
 
 is_ours() {
 	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
@@ -57,13 +51,38 @@ is_ours() {
 	esac
 	return 1
 }
-is_ours "$vpn" || die "$vpn was not created by wgq; not mine to watch"
 
-colour=$(qvm-features "$vpn" wgq.color 2>/dev/null || :)
+all_names=$(qvm-ls --raw-data --fields name 2>/dev/null) \
+	|| die "qvm-ls failed (is qubesd running?)"
 
-# The in-qube sampler: one line per tick, fields separated by spaces --
-#   tick <epoch> <handshake-epoch> <rx-bytes> <tx-bytes> <drop-pkts> <state>
-# (state's spaces become underscores for the line format; dom0 undoes it).
+watch=''
+for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
+	is_ours "$fw" || continue
+	zone=${fw#sys-fw-}
+	[ -z "$only" ] || [ "$zone" = "$only" ] || continue
+	vpn="sys-wgq-$zone"
+	[ "$zone" = wgq ] && vpn=sys-wgq
+	qvm-check --quiet --running "$vpn" 2>/dev/null || continue
+	watch="$watch $zone"
+done
+if [ -n "$only" ]; then
+	qvm-check --quiet "sys-fw-$only" 2>/dev/null || die "zone '$only' does not exist"
+	[ -n "$watch" ] || die "zone '$only' is not running; nothing to watch (sudo wgq connect $only)"
+else
+	[ -n "$watch" ] || die "no zone is running; nothing to watch"
+fi
+
+vpn_of() {
+	case "$1" in wgq) printf 'sys-wgq' ;; *) printf 'sys-wgq-%s' "$1" ;; esac
+}
+
+# One line per tick from inside the qube:
+#   tick <epoch> <hs-epoch> <rx> <tx> <drops> <state-with-underscores>
+# then one line per client vif:
+#   vif <ifname> <client-rx> <client-tx>
+# then a lone "end". (The vif is the qube-side end of the client's
+# link, so its tx is what the CLIENT received and its rx what the
+# client sent: the columns swap once here and never again.)
 # shellcheck disable=SC2016 # non-expansion is the point: this string is
 # the program the QUBE runs; every $ in it belongs to that shell
 SAMPLER='while :; do
@@ -73,69 +92,154 @@ SAMPLER='while :; do
 		| sed -n "s/.*counter packets \([0-9]*\).*drop.*/\1/p" | head -n1)
 	printf "tick %s %s %s %s %s %s\n" "$(date +%s)" "${hs:-0}" "${1:-0}" "${2:-0}" "${drops:-0}" \
 		"$(tr " " "_" < /run/wgq/state 2>/dev/null || echo unknown)"
+	for v in /sys/class/net/vif*/statistics; do
+		[ -d "$v" ] || continue
+		printf "vif %s %s %s\n" "$(basename "$(dirname "$v")")" \
+			"$(cat "$v/tx_bytes")" "$(cat "$v/rx_bytes")"
+	done
+	printf "end\n"
 	INTERVAL_SLOT
 	sleep INTERVAL_VAL
 done'
 
-human() { # bytes -> human
+human() {
 	awk -v b="$1" 'BEGIN {
 		split("B KB MB GB TB", u, " ")
 		i = 1
 		while (b >= 1024 && i < 5) { b /= 1024; i++ }
-		printf (i == 1 ? "%d %s" : "%.1f %s"), b, u[i]
+		printf (i == 1 ? "%d%s" : "%.1f%s"), b, u[i]
 	}'
 }
 
-render() { # <now> <hs> <rx> <tx> <drops> <state> <prev_rx> <prev_tx> <prev_drops> <dt>
-	r_age=$(($1 - $2))
-	[ "$2" -eq 0 ] && r_age=-1
-	r_rxr=$((($3 - $7) / ${10}))
-	r_txr=$((($4 - $8) / ${10}))
-	r_dd=$(($5 - $9))
-	if [ "$once" -eq 0 ] && colour_to 1; then
-		printf '\033[H\033[2J'
-	fi
-	printf '%s  %s\n' "$(paint_to 1 "$colour" "zone $zone")" "$(printf '%s' "$6" | tr '_' ' ' | tr -cd 'a-zA-Z0-9 .,:=_/-')"
-	if [ "$r_age" -lt 0 ]; then
-		printf 'handshake: never\n'
-	else
-		printf 'handshake: %ss ago\n' "$r_age"
-	fi
-	printf 'rx %s/s (total %s)   tx %s/s (total %s)\n' \
-		"$(human "$r_rxr")" "$(human "$3")" "$(human "$r_txr")" "$(human "$4")"
-	printf 'kill-switch drops: %s' "$5"
-	if [ "$r_dd" -gt 0 ]; then
-		printf '  (+%s THIS TICK: something just tried to leave outside the tunnel)' "$r_dd"
-	fi
-	printf '\n'
-	[ "$once" -eq 1 ] || printf '\n(Ctrl-C leaves; the zone is untouched)\n'
+spark() { # "r1 r2 r3..." -> one sparkline
+	awk -v s="$1" 'BEGIN {
+		n = split(s, r, " ")
+		max = 1
+		for (i = 1; i <= n; i++) if (r[i] > max) max = r[i]
+		blocks = "▁▂▃▄▅▆▇█"
+		out = ""
+		for (i = 1; i <= n; i++) {
+			idx = int(r[i] * 7 / max) + 1
+			out = out substr(blocks, (idx - 1) * 3 + 1, 3)
+		}
+		print out
+	}'
 }
 
-prev_rx=0 prev_tx=0 prev_drops=0 first=1
+TMP=$(mktemp -d)
+PIDS=''
+cleanup() {
+	for cp in $PIDS; do kill "$cp" 2>/dev/null || :; done
+	rm -rf "$TMP"
+	if [ "$once" -eq 0 ] && [ -t 1 ]; then
+		printf '\033[?1049l\033[?25h'
+		stty sane 2>/dev/null || :
+	fi
+}
+trap 'cleanup; trap - EXIT; exit 0' INT TERM
+trap cleanup EXIT
+
+start_sampler() { # <zone> <interval-slot>; complete frames land atomically
+	sa_body=$(printf '%s' "$SAMPLER" | sed -e "s/INTERVAL_SLOT/$2/" -e "s/INTERVAL_VAL/$INTERVAL/")
+	qvm-run --no-gui --no-autostart --pass-io -u root -- "$(vpn_of "$1")" "$sa_body" 2>/dev/null | {
+		: >"$TMP/part.$1"
+		while IFS= read -r sl_line; do
+			if [ "$sl_line" = end ]; then
+				mv "$TMP/part.$1" "$TMP/frame.$1"
+				: >"$TMP/part.$1"
+			else
+				printf '%s\n' "$sl_line" >>"$TMP/part.$1"
+			fi
+		done
+	} &
+	PIDS="$PIDS $!"
+}
+
+xid_map=$(qvm-ls --raw-data --fields name,xid 2>/dev/null || :)
+client_of() {
+	printf '%s\n' "$xid_map" | awk -F'|' -v x="$1" '$2 == x {print $1; exit}'
+}
+
+render_zone() { # zone
+	rz_frame="$TMP/frame.$1"
+	rz_vpn=$(vpn_of "$1")
+	rz_colour=$(qvm-features "$rz_vpn" wgq.color 2>/dev/null || :)
+	rz_name=$(paint_to 1 "$rz_colour" "$(printf '%-14s' "zone $1")")
+	if [ ! -s "$rz_frame" ]; then
+		printf '%s waiting for the first sample...\n' "$rz_name"
+		return 0
+	fi
+	# shellcheck disable=SC2046 # the tick line is ours, fixed fields
+	set -- $(head -n1 "$rz_frame")
+	[ "${1:-}" = tick ] || return 0
+	rz_now=$2 rz_hs=$3 rz_rx=$4 rz_tx=$5 rz_drops=$6 rz_state=$7
+	rz_prev="$TMP/prev.$1"
+	if [ -f "$rz_prev" ]; then
+		# shellcheck disable=SC2046 # ours again
+		set -- $(cat "$rz_prev")
+		rz_rxr=$(((rz_rx - $1) / INTERVAL))
+		rz_txr=$(((rz_tx - $2) / INTERVAL))
+		rz_dd=$((rz_drops - $3))
+		[ "$rz_rxr" -lt 0 ] && rz_rxr=0
+		[ "$rz_txr" -lt 0 ] && rz_txr=0
+	else
+		rz_rxr=0 rz_txr=0 rz_dd=0
+	fi
+	printf '%s %s %s\n' "$rz_rx" "$rz_tx" "$rz_drops" >"$rz_prev"
+	printf '%s\n' "$rz_rxr" >>"$TMP/rxh.$1"
+	printf '%s\n' "$rz_txr" >>"$TMP/txh.$1"
+	tail -n 8 "$TMP/rxh.$1" >"$TMP/rxh.$1.t" && mv "$TMP/rxh.$1.t" "$TMP/rxh.$1"
+	tail -n 8 "$TMP/txh.$1" >"$TMP/txh.$1.t" && mv "$TMP/txh.$1.t" "$TMP/txh.$1"
+	rz_age="$((rz_now - rz_hs))s"
+	[ "$rz_hs" -eq 0 ] && rz_age=never
+	printf '%s %s · hs %s\n' "$rz_name" \
+		"$(printf '%s' "$rz_state" | tr '_' ' ' | tr -cd 'a-zA-Z0-9 .,:=_/-')" "$rz_age"
+	printf '  rx %8s/s %s   tx %8s/s %s\n' \
+		"$(human "$rz_rxr")" "$(spark "$(tr '\n' ' ' <"$TMP/rxh.$1")")" \
+		"$(human "$rz_txr")" "$(spark "$(tr '\n' ' ' <"$TMP/txh.$1")")"
+	printf '  drops %s' "$rz_drops"
+	[ "$rz_dd" -gt 0 ] \
+		&& printf '  (+%s THIS TICK: something tried to leave outside the tunnel)' "$rz_dd"
+	printf '\n'
+	grep '^vif ' "$rz_frame" | while read -r _ rz_if rz_crx rz_ctx; do
+		rz_xid=${rz_if#vif}
+		rz_xid=${rz_xid%%.*}
+		rz_client=$(client_of "$rz_xid")
+		printf '  └─ %-12s down %s · up %s\n' "${rz_client:-$rz_if}" \
+			"$(human "$rz_crx")" "$(human "$rz_ctx")"
+	done
+	return 0
+}
 
 if [ "$once" -eq 1 ]; then
-	body=$(printf '%s' "$SAMPLER" | sed -e 's/INTERVAL_SLOT/break/' -e "s/INTERVAL_VAL/$INTERVAL/")
-	line=$(qvm-run --no-gui --no-autostart --pass-io -u root -- "$vpn" "$body" | head -n1)
-	# shellcheck disable=SC2086 # deliberate word splitting of the tick line
-	set -- $line
-	[ "${1:-}" = tick ] || die "the sampler returned nothing usable from $vpn"
-	shift
-	render "$1" "$2" "$3" "$4" "$5" "$6" 0 0 "$5" 1
+	for z in $watch; do
+		start_sampler "$z" break
+	done
+	wait
+	for z in $watch; do
+		if [ -s "$TMP/part.$z" ] && [ ! -s "$TMP/frame.$z" ]; then
+			mv "$TMP/part.$z" "$TMP/frame.$z"
+		fi
+		render_zone "$z"
+	done
 	exit 0
 fi
 
-[ -t 1 ] || die "top is interactive; use '$PROG top $zone --once' (or wgq status/tree) in scripts"
+[ -t 1 ] || die "top is interactive; use '$PROG top ${only:-<zone>} --once' in scripts"
 
-body=$(printf '%s' "$SAMPLER" | sed -e 's/INTERVAL_SLOT/:/' -e "s/INTERVAL_VAL/$INTERVAL/")
-trap 'printf "\n"; exit 0' INT TERM
-qvm-run --no-gui --no-autostart --pass-io -u root -- "$vpn" "$body" | while read -r tag now hs rx tx drops state; do
-	[ "$tag" = tick ] || continue
-	if [ "$first" -eq 1 ]; then
-		prev_rx=$rx prev_tx=$tx prev_drops=$drops first=0
-		dt=1
-	else
-		dt=$INTERVAL
-	fi
-	render "$now" "$hs" "$rx" "$tx" "$drops" "$state" "$prev_rx" "$prev_tx" "$prev_drops" "$dt"
-	prev_rx=$rx prev_tx=$tx prev_drops=$drops
+for z in $watch; do
+	start_sampler "$z" :
+done
+printf '\033[?1049h\033[?25l'
+stty -echo -icanon min 0 time 0 2>/dev/null || :
+while :; do
+	printf '\033[H\033[2J'
+	printf 'wgq top ── %s ── every %ss ── q quits\n\n' "$(date +%H:%M:%S)" "$INTERVAL"
+	for z in $watch; do
+		render_zone "$z"
+		printf '\n'
+	done
+	key=$(dd bs=1 count=1 2>/dev/null || :)
+	[ "$key" = q ] && exit 0
+	sleep "$INTERVAL"
 done
