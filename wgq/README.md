@@ -20,10 +20,14 @@ constrains.
 
 ## Status
 
-**Last tested against: Qubes OS 4.3 on hardware, 2026-09-04 — a full
-end-to-end run.** Target: `debian-13-minimal` (Debian 13 "trixie").
+**Hardware record, one author, one machine (Qubes OS 4.3, target
+`debian-13-minimal` / Debian 13 "trixie"):** the 0.1.0 tree ran end to
+end on 2026-09-04 (the run below); the 0.2.0 release was validated on
+2026-09-06 with its own tools — `wgq doctor`, `wgq verify
+--kill-rounds 3` including the STUN check, and the connection
+lifecycle — before it was tagged. The 0.3.0 tree awaits its pass.
 
-The run, on a live machine with a live IVPN account: install through the
+The 0.1.0 run, on a live machine with a live IVPN account: install through the
 airlock → zone created → `credential` → `keygen` → `provision` (key
 registered, peers written) → `sync` → `switch` (handshake) → `firewall`
 (the `admin.vm.firewall.Set` grant exercised, `ask` prompt observed) →

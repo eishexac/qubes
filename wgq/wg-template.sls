@@ -37,7 +37,7 @@ wgq-base-template-present:
   cmd.run:
     - name: >
         echo "wgq: base template {{ base }} is not installed. Install it with:
-        sudo qubes-dom0-update qubes-template-debian-13-minimal" >&2; exit 1
+        sudo qvm-template install debian-13-minimal" >&2; exit 1
     - unless: qvm-check --quiet {{ base }}
 
 # The clone and its proof of origin are ONE state: qvm-clone then
@@ -136,6 +136,12 @@ wgq-packages:
       # nftables, conntrack and iproute2, so the firewall script and the
       # conntrack flush need nothing extra.
       - qubes-core-agent-networking
+      # dom0 updates route through whatever qube updatevm names, and
+      # that qube must hold the updates proxy script (this package; it
+      # pulls dnf on Debian). Without it, `wgq route dom0-updates
+      # <zone>` would point dom0 updates at a qube that cannot serve
+      # them -- found by external review before anyone hit it.
+      - qubes-core-agent-dom0-updates
       # Minimal templates omit this; qvm-run -u root from dom0 works
       # without it, but in-qube sudo does not.
       - qubes-core-agent-passwordless-root

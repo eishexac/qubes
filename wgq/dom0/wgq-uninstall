@@ -52,7 +52,29 @@ is_ours() {
 	return 1
 }
 
-# Zones first; a zone with attached clients refuses, deliberately.
+# System routes first: a qube still serving as updatevm/clockvm/
+# default_netvm cannot be removed ("in use"), so an uninstall that
+# skipped this would jam halfway through the zones.
+for r_pref in updatevm clockvm default_netvm; do
+	r_cur=$(qubes-prefs "$r_pref" 2>/dev/null | head -n1 || :)
+	case "$r_cur" in
+		sys-fw-* | sys-wgq*)
+			if step "reset $r_pref (currently $r_cur) to the stock default"; then
+				qubes-prefs --default "$r_pref" \
+					|| warn "could not reset $r_pref; removal of $r_cur will refuse until you do"
+			fi
+			;;
+	esac
+done
+for r_feat in wgq.dns wgq.autoconnect; do
+	if [ -n "$(qvm-features dom0 "$r_feat" 2>/dev/null || :)" ]; then
+		if step "clear the global setting $r_feat from dom0"; then
+			qvm-features --unset dom0 "$r_feat" || warn "could not clear $r_feat"
+		fi
+	fi
+done
+
+# Zones next; a zone with attached clients refuses, deliberately.
 for fw in $(qvm-ls --raw-data --fields name 2>/dev/null | grep '^sys-fw-' || true); do
 	if ! is_ours "$fw"; then
 		note "$fw exists but was not created by wgq; leaving it alone"
@@ -126,28 +148,6 @@ if [ -f /etc/qubes/policy.d/30-wgq-labels.policy ]; then
 		rm -f /etc/qubes/policy.d/30-wgq-labels.policy
 	fi
 fi
-
-# System routes first: a qube still serving as updatevm/clockvm/
-# default_netvm cannot be removed ("in use"), so an uninstall that
-# skipped this would jam halfway through the zones.
-for r_pref in updatevm clockvm default_netvm; do
-	r_cur=$(qubes-prefs "$r_pref" 2>/dev/null | head -n1 || :)
-	case "$r_cur" in
-		sys-fw-* | sys-wgq*)
-			if step "reset $r_pref (currently $r_cur) to the stock default"; then
-				qubes-prefs --default "$r_pref" \
-					|| warn "could not reset $r_pref; removal of $r_cur will refuse until you do"
-			fi
-			;;
-	esac
-done
-for r_feat in wgq.dns wgq.autoconnect; do
-	if [ -n "$(qvm-features dom0 "$r_feat" 2>/dev/null || :)" ]; then
-		if step "clear the global setting $r_feat from dom0"; then
-			qvm-features --unset dom0 "$r_feat" || warn "could not clear $r_feat"
-		fi
-	fi
-done
 
 if [ -f /etc/qubes/policy.d/51-wgq-routes.policy ]; then
 	if step "remove the system-traffic route policy /etc/qubes/policy.d/51-wgq-routes.policy"; then

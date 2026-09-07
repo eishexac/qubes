@@ -81,6 +81,13 @@ With it, the same rules are applied by `admin.vm.firewall.Set` — one atomic
 call, no rule numbers to miscount — and the default `ask` action raises a
 dom0 confirmation each time. Read the file; it explains the trade.
 
+**Running sys-gui, or planning admin grants?** The
+`30-wgq-creation.policy` step is optional and the apply plan says so:
+it restates the deny-default for qube creation and label changes so a
+later broad `admin.*` allow cannot quietly include them — which is
+precisely the power a GUI domain or admin qube needs. Skip it (`s`)
+in that case; wgq loses nothing.
+
 **Icons blank after installing? Log out and back in, once.** The install
 drops the wgq icons into a GUI session that is already running, and a
 running menu does not rescan the icon theme — so the wgq qubes show blank

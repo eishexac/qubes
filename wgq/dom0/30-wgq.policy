@@ -1,8 +1,9 @@
 ## /etc/qubes/policy.d/30-wgq.policy
 ##
-## Read this file before you copy it into dom0.  Together with the Salt
-## formula it is the entire dom0 footprint of this project: no installer,
-## no binaries, no scripts.
+## Read this file before you copy it into dom0.  It is one piece of the
+## project's dom0 footprint -- the Salt formula, the dom0 tools under
+## /srv/salt/wgq/dom0/ and the policy files -- all of it plain text,
+## all of it entering through the airlock's reviewed diff.
 ##
 ## What these two lines do
 ## -----------------------

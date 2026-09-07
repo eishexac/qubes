@@ -161,6 +161,8 @@ case "$verb" in
 		;;
 	dom0-updates)
 		[ $# -eq 1 ] || die "usage: $PROG dom0-updates <zone>|default"
+		[ "$1" = default ] \
+			|| note "the target must hold qubes-core-agent-dom0-updates (wgq's template ships it since 0.3.0; older installs re-apply wg-template first)"
 		set_pref updatevm "$1" "dom0 updates"
 		;;
 	new-qubes)
