@@ -1,5 +1,14 @@
 # Design
 
+> This document is the sourced rationale for the 0.1.0 core: the
+> topology, the kill switch, the DNS pin, the allowlist. Mechanisms
+> added since — the verify orchestrator and its STUN check, layered
+> settings and their materialization, system routes (and why the
+> policy sorts at 51, after Whonix), the restart cycle, the airlock's
+> pull-time self-update — are recorded in CHANGELOG.md and in the
+> commit messages that shipped them, which carry their reasoning in
+> full. Folding them in here properly is owed and tracked.
+
 Why wgq is built the way it is, and what each decision rests on.
 
 Most of the choices here look arbitrary until you know the upstream

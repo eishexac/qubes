@@ -63,7 +63,7 @@ cd ~/qubes
 # Release install (recommended): verify the signed tag and pin to it.
 # The fingerprint gpg shows MUST match the one in SECURITY.md.
 gpg --locate-keys hexac@existin.space
-git verify-tag wgq-v0.1.0 && git checkout wgq-v0.1.0
+git verify-tag wgq-v0.2.0 && git checkout wgq-v0.2.0
 
 sh bootstrap.sh <project>...        # one or more, e.g. wgq
 ```
