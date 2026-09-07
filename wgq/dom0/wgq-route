@@ -1,0 +1,179 @@
+#!/bin/sh
+#
+# wgq-route - system traffic becomes a consumer decision.
+#
+#     sudo wgq route [list]
+#     sudo wgq route dom0-updates <zone>|default
+#     sudo wgq route template-updates <zone>|default
+#     sudo wgq route new-qubes <zone>|default
+#     sudo wgq route clock <zone>|default
+#
+# Qubes' system-level network consumers -- dom0 updates, template
+# updates, clock sync, the default netvm of new qubes -- are routable
+# by hand through five different knobs. This verb is those knobs with
+# one grammar, an overview, and the fail-closed reasoning attached:
+# everything routed through a zone inherits the kill switch, so tunnel
+# down means that system function STOPS, never leaks.
+#
+# The one write that is more than a pref is template-updates: it needs
+# a qrexec policy line. House pattern applies -- the exact file content
+# is printed first and one yes installs it, into 51-wgq-routes.policy:
+# sorted AFTER Whonix's tag-matched UpdatesProxy rules (50), so Whonix
+# templates keep updating over Tor, and everything else falls to the
+# chosen zone.
+
+set -eu
+
+PROG=${WGQ_PROG:-${0##*/}}
+case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
+# shellcheck source=dom0/msg.sh
+. "$wgq_here/msg.sh"
+
+POLICY_DIR=${WGQ_POLICY_DIR:-/etc/qubes/policy.d}
+ROUTES_POLICY="$POLICY_DIR/51-wgq-routes.policy"
+
+is_ours() {
+	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
+	case "$(qvm-prefs "$1" label 2>/dev/null)" in
+		wgq | wgq-*) return 0 ;;
+	esac
+	return 1
+}
+
+fw_of() { # zone -> its firewall qube, validated and owned
+	case "$1" in
+		'' | *[!a-z0-9-]* | -*) die "unusable zone name '$1'" ;;
+	esac
+	qvm-check --quiet "sys-fw-$1" 2>/dev/null || die "zone '$1' does not exist"
+	is_ours "sys-fw-$1" || die "sys-fw-$1 was not created by wgq; not mine to route through"
+	printf 'sys-fw-%s' "$1"
+}
+
+provenance() { # a current value -> "via zone X" | "default" | "custom"
+	case "$1" in
+		sys-fw-*)
+			if is_ours "$1" 2>/dev/null; then
+				printf 'via zone %s' "${1#sys-fw-}"
+			else
+				printf 'custom'
+			fi
+			;;
+		'' | None | none | '-') printf 'unset' ;;
+		sys-net | sys-firewall) printf 'stock' ;;
+		*) printf 'custom' ;;
+	esac
+}
+
+cmd_list() {
+	l_upd=$(qubes-prefs updatevm 2>/dev/null || :)
+	l_clock=$(qubes-prefs clockvm 2>/dev/null || :)
+	l_net=$(qubes-prefs default_netvm 2>/dev/null || :)
+	if [ -f "$ROUTES_POLICY" ]; then
+		l_tpl=$(sed -n 's/.*target=\(sys-fw-[a-z0-9-]*\).*/\1/p' "$ROUTES_POLICY" | head -n1)
+	else
+		l_tpl=''
+	fi
+	printf '%-17s %-16s %s\n' ROLE TARGET '' >&2
+	printf '%-17s %-16s (%s)\n' dom0-updates "${l_upd:-none}" "$(provenance "$l_upd")"
+	printf '%-17s %-16s (%s)\n' template-updates "${l_tpl:-stock policy}" \
+		"$([ -n "$l_tpl" ] && provenance "$l_tpl" || printf 'default')"
+	printf '%-17s %-16s (%s)\n' clock "${l_clock:-none}" "$(provenance "$l_clock")"
+	printf '%-17s %-16s (%s)\n' new-qubes "${l_net:-none}" "$(provenance "$l_net")"
+	note "a role behind a zone inherits fail-closed: tunnel down = that function stops, never leaks"
+}
+
+set_pref() { # <pref> <zone|default> <role name for messages>
+	if [ "$2" = default ]; then
+		qubes-prefs --default "$1" || die "could not reset $1"
+		ok "$3 back to the stock default"
+		return 0
+	fi
+	sp_fw=$(fw_of "$2")
+	trace "-> qubes-prefs $1 $sp_fw"
+	qubes-prefs "$1" "$sp_fw" || die "could not set $1"
+	ok "$3 now rides zone $2 ($sp_fw): tunnel down means it stops, never leaks"
+}
+
+cmd_template_updates() {
+	if [ "$1" = default ]; then
+		if [ -f "$ROUTES_POLICY" ]; then
+			rm -f "$ROUTES_POLICY"
+			ok "template updates back to the stock policy ($ROUTES_POLICY removed)"
+			note "the updates-proxy service flag on the old zone is left as it was; clear it with: qvm-features <fw-qube> --unset service.qubes-updates-proxy"
+		else
+			ok "template updates already follow the stock policy"
+		fi
+		return 0
+	fi
+	tu_fw=$(fw_of "$1")
+	tu_content="# wgq: template updates ride zone $1. Installed by 'wgq route
+# template-updates $1', removed by 'wgq route template-updates default'
+# and by wgq-uninstall. Sorted 51 ON PURPOSE: Whonix's tag-matched
+# UpdatesProxy rules sort at 50 and must keep winning, so Whonix
+# templates keep updating over Tor; every other template falls through
+# to this line.
+qubes.UpdatesProxy * @type:TemplateVM @default allow target=$tu_fw"
+	note "this role needs a qrexec policy line; the exact file that would be installed:"
+	printf '\n--- %s ---\n%s\n---\n\n' "$ROUTES_POLICY" "$tu_content" >&2
+	printf 'Install it and enable the proxy on %s? [y/N] ' "$tu_fw"
+	read -r tu_ans || tu_ans=n
+	case "$tu_ans" in
+		y | yes) ;;
+		*)
+			note "nothing installed; the lines above are yours to paste if you prefer"
+			return 0
+			;;
+	esac
+	printf '%s\n' "$tu_content" >"$ROUTES_POLICY" || die "could not write $ROUTES_POLICY"
+	qvm-features "$tu_fw" service.qubes-updates-proxy 1 \
+		|| die "policy installed but the proxy service flag failed; run: qvm-features $tu_fw service.qubes-updates-proxy 1"
+	ok "template updates now ride zone $1 (Whonix templates keep their Tor route); takes effect from $tu_fw's next start"
+}
+
+cmd_clock() {
+	if [ "$1" != default ]; then
+		warn "the clock paradox: WireGuard re-handshakes can fail on a badly wrong clock,"
+		warn "and a clock source BEHIND the tunnel can then never fix the clock -- a cold"
+		warn "boot with a drifted RTC can wedge until you route clock elsewhere."
+		printf 'Route clock sync through the tunnel anyway? [y/N] '
+		read -r ck_ans || ck_ans=n
+		case "$ck_ans" in
+			y | yes) ;;
+			*)
+				note "clock unchanged"
+				return 0
+				;;
+		esac
+	fi
+	set_pref clockvm "$1" "clock sync"
+}
+
+[ $# -ge 1 ] || set -- list
+verb=$1
+shift
+case "$verb" in
+	list)
+		[ $# -eq 0 ] || {
+			printf 'usage: %s list\n' "$PROG" >&2
+			exit 2
+		}
+		cmd_list
+		;;
+	dom0-updates)
+		[ $# -eq 1 ] || die "usage: $PROG dom0-updates <zone>|default"
+		set_pref updatevm "$1" "dom0 updates"
+		;;
+	new-qubes)
+		[ $# -eq 1 ] || die "usage: $PROG new-qubes <zone>|default"
+		set_pref default_netvm "$1" "new qubes' network"
+		;;
+	template-updates)
+		[ $# -eq 1 ] || die "usage: $PROG template-updates <zone>|default"
+		cmd_template_updates "$1"
+		;;
+	clock)
+		[ $# -eq 1 ] || die "usage: $PROG clock <zone>|default"
+		cmd_clock "$1"
+		;;
+	*) die "unknown role '$verb' (dom0-updates, template-updates, clock, new-qubes; or list)" ;;
+esac

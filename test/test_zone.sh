@@ -69,7 +69,32 @@ EOF
 
 cat >"$WORK/bin/qubes-prefs" <<'EOF'
 #!/bin/sh
-[ "$1" = default_netvm ] && echo sys-firewall
+def=0
+[ "$1" = --default ] && {
+	def=1
+	shift
+}
+prop=$1
+if [ "$def" -eq 1 ]; then
+	grep -v "^$prop=" "${GPREFS:?}" > "$GPREFS.tmp" || :
+	mv "$GPREFS.tmp" "$GPREFS"
+	printf 'gprefs-default %s\n' "$prop" >> "${QCTL_LOG:?}"
+elif [ $# -ge 2 ]; then
+	grep -v "^$prop=" "${GPREFS:?}" > "$GPREFS.tmp" || :
+	mv "$GPREFS.tmp" "$GPREFS"
+	printf '%s=%s\n' "$prop" "$2" >> "$GPREFS"
+	printf 'gprefs-set %s=%s\n' "$prop" "$2" >> "${QCTL_LOG:?}"
+else
+	v=$(sed -n "s/^$prop=//p" "${GPREFS:?}")
+	if [ -n "$v" ]; then
+		printf '%s\n' "$v"
+	else
+		case "$prop" in
+			default_netvm | updatevm) echo sys-firewall ;;
+			clockvm) echo sys-net ;;
+		esac
+	fi
+fi
 EOF
 
 cat >"$WORK/bin/qvm-ls" <<'EOF'
@@ -183,8 +208,9 @@ fi
 EOF
 
 chmod +x "$WORK/bin/"*
-export FAKEQ="$WORK/qubes" QCTL_LOG="$WORK/qctl.log" RUNNING="$WORK/running" TAGS="$WORK/tags" FEATS="$WORK/features"
+export FAKEQ="$WORK/qubes" QCTL_LOG="$WORK/qctl.log" RUNNING="$WORK/running" TAGS="$WORK/tags" FEATS="$WORK/features" GPREFS="$WORK/gprefs"
 : >"$WORK/features"
+: >"$WORK/gprefs"
 : >"$TAGS"
 : >"$QCTL_LOG"
 printf 'sys-net\nsys-firewall\n' >"$RUNNING"
@@ -555,6 +581,56 @@ else
 fi
 printf 'zc\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove zc >/dev/null 2>&1 || :
 grep -v '^sys-wgq-zc|' "$FEATS" >"$FEATS.tmp" && mv "$FEATS.tmp" "$FEATS"
+
+# 11a6c. System routes: prefs move behind a zone and come back; the
+# policy write prints first and installs only on yes; clock argues.
+ROUTE=$(cd "$(dirname "$0")/.." && pwd)/wgq/dom0/wgq-route
+route() { env PATH="$WORK/bin:$PATH" WGQ_POLICY_DIR="$WORK/policy" sh "$ROUTE" "$@"; }
+if route dom0-updates work >"$WORK/out" 2>&1 \
+	&& grep -q 'gprefs-set updatevm=sys-fw-work' "$QCTL_LOG" \
+	&& route list 2>/dev/null | grep -q 'dom0-updates.*via zone work' \
+	&& route dom0-updates default >/dev/null 2>&1 \
+	&& grep -q 'gprefs-default updatevm' "$QCTL_LOG"; then
+	ok "dom0-updates routes through a zone and back to stock"
+else
+	cat "$WORK/out"
+	fail "dom0-updates routing went wrong"
+fi
+if printf 'n\n' | route template-updates work >"$WORK/out" 2>&1 \
+	&& [ ! -f "$WORK/policy/51-wgq-routes.policy" ] \
+	&& grep -q 'yours to paste' "$WORK/out"; then
+	ok "declining the policy write installs nothing"
+else
+	cat "$WORK/out"
+	fail "template-updates decline still wrote something"
+fi
+if printf 'y\n' | route template-updates work >"$WORK/out" 2>&1 \
+	&& grep -q 'target=sys-fw-work' "$WORK/policy/51-wgq-routes.policy" \
+	&& grep -q 'sys-fw-work|service.qubes-updates-proxy|1' "$FEATS" \
+	&& grep -q 'Tor' "$WORK/out"; then
+	ok "template-updates installs the 51-sorted policy and the proxy flag"
+else
+	cat "$WORK/out"
+	fail "template-updates yes-path went wrong"
+fi
+route template-updates default >/dev/null 2>&1 || :
+grep -v 'service.qubes-updates-proxy' "$FEATS" >"$FEATS.tmp" && mv "$FEATS.tmp" "$FEATS"
+if printf 'n\n' | route clock work >"$WORK/out" 2>&1 \
+	&& grep -q 'paradox' "$WORK/out" \
+	&& ! grep -q 'gprefs-set clockvm' "$QCTL_LOG"; then
+	ok "clock routing argues, and no means no"
+else
+	cat "$WORK/out"
+	fail "the clock paradox warning went missing"
+fi
+if route dom0-updates alien >"$WORK/out" 2>&1; then
+	fail "routing accepted a nonexistent zone"
+elif grep -q "does not exist" "$WORK/out"; then
+	ok "routing refuses an unknown zone"
+else
+	cat "$WORK/out"
+	fail "unknown-zone refusal said the wrong thing"
+fi
 
 # 11a7. The restart cycle: plan first, clients named as going dark, one
 # confirmation; fw down (forced, it stops under clients), vpn down,

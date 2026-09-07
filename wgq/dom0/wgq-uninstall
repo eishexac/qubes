@@ -127,6 +127,11 @@ if [ -f /etc/qubes/policy.d/30-wgq-labels.policy ]; then
 	fi
 fi
 
+if [ -f /etc/qubes/policy.d/51-wgq-routes.policy ]; then
+	if step "remove the system-traffic route policy /etc/qubes/policy.d/51-wgq-routes.policy"; then
+		rm -f /etc/qubes/policy.d/51-wgq-routes.policy
+	fi
+fi
 if [ -f /etc/qubes/policy.d/30-wgq-creation.policy ]; then
 	if step "remove the only-dom0-creates denies /etc/qubes/policy.d/30-wgq-creation.policy"; then
 		rm -f /etc/qubes/policy.d/30-wgq-creation.policy
