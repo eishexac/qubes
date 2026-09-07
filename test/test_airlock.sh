@@ -269,7 +269,7 @@ reset_apply
 if run_apply ''; then
 	fail "a malformed plan was accepted"
 elif grep -q 'unknown verb' "$WORK/out" && [ ! -s "$WORK/qlog" ] \
-	&& grep -q 'pull <qube> dom0' "$WORK/out"; then
+	&& grep -q 'diff /usr/local/bin/airlock' "$WORK/out"; then
 	ok "malformed plan refused whole, nothing ran, self-update taught"
 else
 	cat "$WORK/out"
