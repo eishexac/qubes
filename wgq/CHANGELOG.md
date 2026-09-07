@@ -35,6 +35,15 @@ positional. See docs/lifecycle.md as sections land.
   ends with a note pointing at it (the plan can speak; the qubes belong
   to the wgq tool).
 
+### Fixed
+
+- Icons were blank in GTK tools (the Update GUI foremost) while fine in
+  Qt ones: gdk-pixbuf recognizes an SVG by finding `<svg` near the top
+  of the file, and every icon buried it under a ~1 KB license comment.
+  The comment now lives inside the `<svg>` element; a check guards the
+  tag's position forever. Qt never sniffs, which is why the menu and
+  Qube Manager saw the icons all along.
+
 ### Changed
 
 - Zone names may not be `autoconnect`, `dns` or `default`: they are the
