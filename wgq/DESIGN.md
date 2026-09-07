@@ -1,14 +1,5 @@
 # Design
 
-> This document is the sourced rationale for the 0.1.0 core: the
-> topology, the kill switch, the DNS pin, the allowlist. Mechanisms
-> added since — the verify orchestrator and its STUN check, layered
-> settings and their materialization, system routes (and why the
-> policy sorts at 51, after Whonix), the restart cycle, the airlock's
-> pull-time self-update — are recorded in CHANGELOG.md and in the
-> commit messages that shipped them, which carry their reasoning in
-> full. Folding them in here properly is owed and tracked.
-
 Why wgq is built the way it is, and what each decision rests on.
 
 Most of the choices here look arbitrary until you know the upstream
@@ -587,10 +578,13 @@ needs an explicit flag; provider endpoints must always be publicly routable.
 egress to the endpoint is deliberately permitted, so testing there proves
 nothing about what clients can reach.
 
-It cannot be one automatic run, and pretending otherwise would produce a
-check that always passes. Two of the four need a hand elsewhere: stopping
-the tunnel is a dom0 command, and the capture comes from the upstream
-firewall qube. The script walks the operator through both.
+As a standalone script it cannot be one automatic run — stopping the
+tunnel is a dom0 command, and the capture comes from the upstream
+firewall qube; the script walks the operator through both. That
+observation is exactly why `wgq verify` exists (section 11): dom0
+holds the baton the script lacks, so from dom0 the whole thing *is*
+one run, and the standalone script remains for zones wgq did not
+build.
 
 1. **The public address is the tunnel exit.** Needs an anchor —
    `--provider mullvad`, `--exit-ip`, or `--clearnet-ip`. Without one it
@@ -608,7 +602,134 @@ it did not observe.
 
 ---
 
-## 11. Out of scope
+## 11. The verifier that cannot lie quietly
+
+`wgq verify` exists because the manual check ritual was the part of the
+project most likely to be skipped, and a skipped verifier is worse than
+none. Its design carries the scars of two real incidents.
+
+The first: the original check 3 read `dig`'s output, and dig writes its
+error notices to **stdout** — a broken tunnel produced text, the text
+read as an answer, and a leaking zone could be called sealed. The
+replacement probes build DNS queries as raw wire bytes and parse the
+answers with a deliberately strict reader (our transaction id, NOERROR,
+actual A records — anything less is *no answer*). The second, found by
+review before it shipped a lie: the kill test scored "no valid answer"
+as "no leak", when with the tunnel down an NXDOMAIN from a clearnet
+resolver — a round trip in the clear — **is** the leak. Killcheck
+therefore measures **round trips**: any response, any rcode, a TCP
+reset, counts as escape; only silence is clean; and a probe that
+crashes counts as leaked, because a broken detector must never read as
+a sealed zone. The orchestrator refuses to certify a round whose
+probes cannot prove they ran, and proves the tunnel actually stopped
+(interface read back absent) before probing — an error exit is not an
+answer.
+
+Check 1b answers the WebRTC question at the layer this project
+controls: a browser discovers its address over STUN, which is UDP, and
+check 1 only proves the TCP path. The probe speaks RFC 5389 from the
+Python stdlib and requires the XOR-MAPPED-ADDRESS to be the tunnel
+exit. It stays out of the kill test on purpose: with DNS dark the STUN
+hostname cannot resolve, and a local resolution failure would read as
+a leak.
+
+The probes are stdlib-only and pushed fresh from the reviewed tree at
+every run, because the alternative — tools installed in the client —
+died with every qube restart and was half the reason verification got
+skipped.
+
+## 12. Settings: features are the truth, the dataplane holds copies
+
+A zone's settings (autoconnect, resolver) are stored as qubes features
+— on the zone's VPN qube for the override layer, on dom0 for the
+global layer — and *materialized* into what the dataplane actually
+reads (the boot-time service flag, `/rw/config/wg/dns`) at `set` and
+`connect`. The split is deliberate: the firewall script must work from
+files inside the qube (it runs before any qrexec is available to ask
+dom0), while the source of truth must live where dom0 can read,
+compare and repair it. `doctor` checks copy against truth; `get` names
+the layer that answered, which is what keeps layering honest.
+
+Materialization is guarded write by write, because inside an `||`
+context POSIX disables `errexit` throughout the compound — a lesson
+paid for in review: an unguarded failure was silently stepped over and
+the zone left stale while reporting success. And there is no automatic
+import of a bare boot flag into the settings model: a flag without its
+feature cannot be told apart from a copy materialize itself wrote
+before the feature was cleared, and guessing would re-arm a setting
+the user just turned off.
+
+Autoconnect's boot half lives in a dedicated unit (`wg-autoconnect`)
+rather than a systemd Condition on the tunnel unit, because a
+Condition gates manual starts too — it would have made `wgq connect` a
+no-op on an autoconnect-off zone. The autoconnect unit runs on *every*
+boot and seals the firewall unconditionally; the flag gates only the
+tunnel start, so turning autoconnect off can never remove the second
+kill-switch installer.
+
+## 13. System routes, and why the policy sorts at 51
+
+Qubes' system-level consumers — dom0 updates (`updatevm`), template
+updates (the `qubes.UpdatesProxy` policy), clock sync (`clockvm`), new
+qubes' default netvm — are each routable by hand; `wgq route` is those
+knobs behind one grammar with the fail-closed reasoning attached.
+Everything routed through a zone inherits the kill switch: tunnel down
+means that system function stops, never leaks.
+
+The one write bigger than a pref is the template-updates policy line,
+and its filename is load-bearing: `51-wgq-routes.policy`. Whonix's
+tag-matched UpdatesProxy rules sort at 50 and must keep winning, so
+Whonix templates keep updating over Tor; every other template falls
+through to the chosen zone. A lower sort would have silently
+de-Torified Whonix template updates — caught at design time, encoded
+in the name. The file is printed in full before a yes installs it,
+`uninstall` removes it, and `uninstall` resets the pref-based routes
+*first*, because a qube still serving as updatevm cannot be removed
+and would jam the teardown.
+
+Clock sync is allowed through a zone but argued with twice: WireGuard
+re-handshakes can fail on a badly wrong clock, and a clock source
+behind the tunnel can then never fix the clock — a cold boot with a
+drifted RTC can wedge until the route is undone.
+
+## 14. Grammar: named or picked, never implied
+
+The zone is the sentence's subject, so it is a positional, and there
+is deliberately no default and no implication. The reserved default
+zone was retired the release after hardware showed what it cost
+(a zone named like the tool, verbs silently reaching for it, a
+name-collision that ate an evening); "exactly one zone exists, so it
+is implied" was rejected with it, because a command's behavior must
+not change the day a second zone appears. Name no zone on a terminal
+and a picker asks — even with one zone: choosing from a one-item list
+is an explicit act. Without a terminal the command refuses and lists
+the zones; scripts get neither prompts nor guesses. Disambiguation is
+by closed sets (`set`'s keys can never name a zone; `switch` keeps its
+final argument), never by cleverness.
+
+Reading the bare `sys-wgq` name survives exactly one release past the
+migration verb, because removing it in the same version that ships
+`zone rename` would strand an un-migrated machine mid-update. Creation
+died immediately; reading dies one release later; doctor nags in
+between.
+
+## 15. The airlock updates itself where updates arrive
+
+`airlock pull` fetches the repo's own `dom0/airlock` before anything
+else and, when it differs from the installed tool, shows the diff and
+offers the replacement — read what will replace me — then re-runs the
+same pull with the new tool on a yes. The natural moment is the pull
+because that is when a newer tree is in hand; the natural mechanism is
+the same transport and the same diff-then-typed-yes ritual as every
+other approval. Declining stays safe: the plan is validated whole
+before anything runs, so a verb the old tool does not know refuses
+with nothing half-applied. The plan language itself gained exactly one
+non-executing verb, `note` — a line the plan *says* to the operator —
+because sometimes the right next step (restarting qubes) belongs to a
+project tool the airlock must stay ignorant of: trees and plans are
+airlock's; qubes are the project's.
+
+## 16. Out of scope
 
 **Provider CLI and daemon integration.** Vendor clients manipulate nftables
 to prevent leaks in ways that assume an ordinary Linux host, and their
