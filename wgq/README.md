@@ -102,6 +102,8 @@ down means they get nothing, never clear traffic.
 
 ## The commands
 
+Full syntax and output previews: [docs/cli.md](docs/cli.md).
+
 | | | docs |
 |---|---|---|
 | `zone add/attach/detach/list/remove/rename` | zones are the lifecycle | [lifecycle](docs/lifecycle.md) |
@@ -121,6 +123,7 @@ down means they get nothing, never clear traffic.
 
 | | |
 |---|---|
+| [docs/cli.md](docs/cli.md) | every command with its syntax and what it prints |
 | [docs/threat-model.md](docs/threat-model.md) | what this protects against, what it does not, and what it refuses to do |
 | [docs/architecture.md](docs/architecture.md) | topology, defence layers, identity and ownership, layout |
 | [docs/install.md](docs/install.md) | the verified install, step by step, and uninstall |
