@@ -44,6 +44,29 @@ all_names=$(qvm-ls --raw-data --fields name 2>/dev/null) \
 	|| die "qvm-ls failed; cannot draw anything (is qubesd running?)"
 all_netvms=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null) || all_netvms=''
 
+netvm_of() {
+	printf '%s\n' "$all_netvms" | awk -F'|' -v n="$1" '$1 == n {print $2; exit}'
+}
+
+# the chain from a zone's VPN qube up to the physical root, root first
+chain_of() {
+	c_cur=$1
+	c_chain=''
+	c_hops=0
+	while [ "$c_hops" -lt 8 ]; do
+		c_cur=$(netvm_of "$c_cur")
+		case "$c_cur" in '' | - | None | none) break ;; esac
+		c_chain="$c_cur${c_chain:+ }$c_chain"
+		c_hops=$((c_hops + 1))
+	done
+	printf '%s' "$c_chain"
+}
+
+# Two passes: collect every zone's record, then draw grouped by chain
+# so shared plumbing prints once and the zones hang off it like the
+# design page drew them.
+records=$(mktemp)
+trap 'rm -f "$records"' EXIT INT TERM
 zones=0
 for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 	is_ours "$fw" || continue
@@ -51,10 +74,7 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 	zone=${fw#sys-fw-}
 	vpn="sys-wgq-$zone"
 	[ "$zone" = wgq ] && vpn=sys-wgq
-	colour=$(qvm-features "$vpn" wgq.color 2>/dev/null || :)
-	uplink=$(qvm-prefs "$vpn" netvm 2>/dev/null | head -n1 || :)
 
-	# health, from the qube that knows -- or an honest shrug
 	if qvm-check --quiet --running "$vpn" 2>/dev/null; then
 		state=$(vpn_probe "$vpn" 'cat /run/wgq/state' | sanitize) && rc=0 || rc=$?
 		if [ "$rc" -eq 9 ] || [ -z "$state" ]; then
@@ -68,23 +88,62 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 			health='halted (boots sealed: autoconnect off)'
 		fi
 	fi
-
-	case "$uplink" in
-		sys-fw-*) chain_note="  (chained through zone ${uplink#sys-fw-})" ;;
-		*) chain_note='' ;;
-	esac
-
-	printf '%s  %s\n' "$(paint_to 1 "$colour" "zone $zone")" "$health"
-	printf '  %s -> %s -> %s%s\n' "${uplink:-?}" "$vpn" "$fw" "$chain_note"
 	clients=$(printf '%s\n' "$all_netvms" \
 		| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
-	if [ -n "$clients" ]; then
-		printf '  clients: %s\n' "$clients"
-	else
-		printf '  clients: none  (attach: sudo wgq zone attach %s <qube>)\n' "$zone"
-	fi
+	printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+		"$(chain_of "$vpn")" "$zone" "$vpn" "$fw" "$health" "${clients:- }" >>"$records"
 done
-[ "$zones" -gt 0 ] || note "no zones exist; create one with: sudo wgq zone add <name>"
+
+if [ "$zones" -eq 0 ]; then
+	note "no zones exist; create one with: sudo wgq zone add <name>"
+else
+	sort -o "$records" "$records"
+	prev_chain=__none__
+	group_left=0
+	# shellcheck disable=SC2094 # the inner awk READS the same file the
+	# loop reads; nothing writes it -- counting a group is not a write
+	while IFS="$(printf '\t')" read -r chain zone vpn fw health clients; do
+		if [ "$chain" != "$prev_chain" ]; then
+			prev_chain=$chain
+			group_left=$(awk -F'\t' -v c="$chain" '$1 == c' "$records" | wc -l)
+			indent=''
+			first=1
+			for hop in $chain; do
+				if [ "$first" -eq 1 ]; then
+					printf '%s\n' "$hop"
+					first=0
+				else
+					printf '%s└─ %s\n' "$indent" "$hop"
+					indent="$indent   "
+				fi
+			done
+			[ -n "$chain" ] || indent=''
+		fi
+		group_left=$((group_left - 1))
+		if [ "$group_left" -gt 0 ]; then
+			branch='├─'
+			cont='│ '
+		else
+			branch='└─'
+			cont='  '
+		fi
+		colour=$(qvm-features "$vpn" wgq.color 2>/dev/null || :)
+		printf '%s%s %s %s\n' "$indent" "$branch" \
+			"$(paint_to 1 "$colour" "$(printf '%-14s' "zone $zone")")" "$health"
+		printf '%s%s %s ─ %s\n' "$indent" "$cont" "$vpn" "$fw"
+		case "$clients" in
+			*[!\ ]*) printf '%s%s └─ %s\n' "$indent" "$cont" "$clients" ;;
+			*) printf '%s%s └─ (no clients; attach: sudo wgq zone attach %s <qube>)\n' "$indent" "$cont" "$zone" ;;
+		esac
+	done <"$records"
+fi
+
+if qvm-check --quiet "${WGQ_MGMT:-wgq-mgmt}" 2>/dev/null && is_ours "${WGQ_MGMT:-wgq-mgmt}"; then
+	m_state=halted
+	qvm-check --quiet --running "${WGQ_MGMT:-wgq-mgmt}" 2>/dev/null && m_state=running
+	printf 'mgmt: %s (%s, via %s)\n' "${WGQ_MGMT:-wgq-mgmt}" "$m_state" \
+		"$(netvm_of "${WGQ_MGMT:-wgq-mgmt}")"
+fi
 
 # the system routes, so the whole picture is one screen
 r_upd=$(qubes-prefs updatevm 2>/dev/null || :)
