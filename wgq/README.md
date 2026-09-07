@@ -100,6 +100,23 @@ down means they get nothing, never clear traffic.
 
 ---
 
+## The commands
+
+| | | docs |
+|---|---|---|
+| `zone add/attach/detach/list/remove/rename` | zones are the lifecycle | [lifecycle](docs/lifecycle.md) |
+| `connect` / `disconnect` (`up`/`down`) | tunnel up / zone dark — never clear | [lifecycle](docs/lifecycle.md) |
+| `set` / `get` | layered settings: autoconnect, dns; `--global` | [lifecycle](docs/lifecycle.md) |
+| `credential keygen pubkey provision sync switch firewall` | provisioning, dom0-framed | [lifecycle](docs/lifecycle.md) |
+| `verify` | prove the zone leak-tight, kill test included | [verify](docs/verify.md) |
+| `doctor` | every invariant checked, every failure with its fix | [verify](docs/verify.md) |
+| `tree` | the topology as a rooted, painted forest | [lifecycle](docs/lifecycle.md) |
+| `top` | full-screen dashboard: rates, clients, drop counter | [lifecycle](docs/lifecycle.md) |
+| `route` | system traffic (updates, clock, defaults) by zone | [lifecycle](docs/lifecycle.md) |
+| `restart` | the offered shutdown/start cycle after updates | [lifecycle](docs/lifecycle.md) |
+| `panic` | emergency stop: every zone dark, upstream-enforced | [lifecycle](docs/lifecycle.md) |
+| `uninstall` | full teardown, step by step | [install](docs/install.md) |
+
 ## Documentation
 
 | | |
