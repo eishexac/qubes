@@ -25,8 +25,15 @@ EOF
 chmod +x "$WORK/transport"
 export AIRLOCK_TRANSPORT="$WORK/transport"
 
+# the "installed" airlock: identical to the repo's, so the self-update
+# offer stays silent through the ordinary cases
+export AIRLOCK_SELF="$WORK/self-installed"
+cp "$INGEST" "$AIRLOCK_SELF"
+chmod 0755 "$AIRLOCK_SELF"
+
 REPO="$WORK/repo"
-mkdir -p "$REPO/demo/salt"
+mkdir -p "$REPO/demo/salt" "$REPO/dom0"
+cp "$INGEST" "$REPO/dom0/airlock"
 printf 'first version\n' >"$REPO/demo/readme.txt"
 printf 'x:\n  test.nop: []\n' >"$REPO/demo/salt/x.sls"
 
@@ -269,7 +276,7 @@ reset_apply
 if run_apply ''; then
 	fail "a malformed plan was accepted"
 elif grep -q 'unknown verb' "$WORK/out" && [ ! -s "$WORK/qlog" ] \
-	&& grep -q 'diff /usr/local/bin/airlock' "$WORK/out"; then
+	&& grep -q 're-run the pull' "$WORK/out"; then
 	ok "malformed plan refused whole, nothing ran, self-update taught"
 else
 	cat "$WORK/out"
@@ -345,6 +352,33 @@ if run_apply_t 'y\ny\n' 1 \
 else
 	cat "$WORK/out" "$WORK/qtlog" 2>/dev/null
 	fail "template install step went wrong"
+fi
+
+# 17. The repo carries a different airlock: pull offers it FIRST; a
+# declined offer continues with the current tool and still installs.
+printf '\n# marker: newer airlock\n' >>"$REPO/dom0/airlock"
+reset_apply 2>/dev/null || true
+if printf '%b' '\nn\n\nyes\n' | "$INGEST" pull testqube demo "$REPO" >"$WORK/out" 2>&1 \
+	&& grep -q 'DIFFERENT airlock' "$WORK/out" \
+	&& grep -q 'continuing with the current tool' "$WORK/out" \
+	&& grep -q 'marker: newer airlock' "$WORK/out" \
+	&& [ -f "$AIRLOCK_SALT_ROOT/demo/readme.txt" ]; then
+	ok "a differing airlock is offered, shown, and decline continues safely"
+else
+	cat "$WORK/out"
+	fail "the declined self-update went wrong"
+fi
+
+# 18. Accepting the offer installs the new tool and re-runs the pull
+# with it -- one command, no hand-typed trio.
+if printf '%b' '\ny\n\nyes\n' | "$INGEST" pull testqube demo "$REPO" >"$WORK/out" 2>&1 \
+	&& grep -q 'marker: newer airlock' "$AIRLOCK_SELF" \
+	&& grep -q 're-running this pull with the new tool' "$WORK/out" \
+	&& grep -q 'already exactly what testqube holds' "$WORK/out"; then
+	ok "an accepted self-update installs and re-runs the pull seamlessly"
+else
+	cat "$WORK/out"
+	fail "the accepted self-update went wrong"
 fi
 
 if [ "$failures" -gt 0 ]; then

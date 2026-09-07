@@ -52,7 +52,18 @@ positional. See docs/lifecycle.md as sections land.
   ends with a note pointing at it (the plan can speak; the qubes belong
   to the wgq tool).
 
+- The airlock updates itself at pull time: `airlock pull` fetches the
+  repo's own airlock first and, when it differs from the installed
+  tool, shows the diff and offers to install it before anything else —
+  one accepted yes re-runs the pull with the new tool. The
+  unknown-verb refusal points there.
+
 ### Fixed
+
+- `wgq uninstall` resets system routes (updatevm, clockvm,
+  default_netvm) and clears the global settings before removing zones —
+  a qube still serving as updatevm cannot be removed, so an uninstall
+  after `wgq route` would have jammed halfway.
 
 - Icons were blank in GTK tools (the Update GUI foremost) while fine in
   Qt ones: gdk-pixbuf recognizes an SVG by finding `<svg` near the top
