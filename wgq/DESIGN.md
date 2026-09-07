@@ -34,9 +34,25 @@ Everything below follows from those.
 ## 2. Topology
 
 ```
-sys-net ── sys-firewall ─┬─ sys-wgq-work ── sys-fw-work ── [client qubes]
-                         ├─ wgq-mgmt                             (provisioning only)
-                         └─ sys-whonix                           (optional)
+sys-net ── sys-firewall ─┬─ sys-wgq-work ──── sys-fw-work ─┬─ work
+                         │   (tunnel A)        (allowlist  ├─ media
+                         │                      enforced   └─ sys-whonix ── anon-whonix
+                         │                      upstream)      (tor OVER the vpn: the ISP
+                         │                                      sees WireGuard, never Tor;
+                         │                                      tunnel down = Tor goes dark)
+                         │
+                         ├─ sys-wgq-vault ─── sys-fw-vault ─── vault
+                         │   (tunnel B: its own provider account,
+                         │    its own keys, its own exit)
+                         │
+                         └─ wgq-mgmt   (provisioning only: reaches the
+                                        provider API over CLEARNET, holds
+                                        the credential, never a key)
+
+system traffic joins by choice (wgq route): dom0 updates, template
+updates, clock, new qubes' default netvm -> any sys-fw-<zone>.
+zones can chain: sys-wgq-vault's netvm may be sys-fw-work, nesting
+tunnel B inside tunnel A (multihop by composition).
 ```
 
 **A second firewall qube downstream of the VPN qube.** Qubes states that
@@ -64,9 +80,16 @@ tunnel to reach the provider cannot fix a broken tunnel, and sending
 account authentication through a tunnel keyed to that same account is its
 own problem.
 
-**No firewall qube between `sys-wgq-*` and `sys-whonix`.** Whonix-Gateway
-does not respect the qubes-firewall service, so rules on qubes behind it
-have no effect. It would buy nothing.
+**Tor over VPN is plain client attachment.** `sys-whonix` behind a
+zone's firewall qube (`qvm-prefs sys-whonix netvm sys-fw-work`, or
+`wgq zone attach work sys-whonix`) gives
+`anon-whonix -> sys-whonix -> sys-fw-work -> sys-wgq-work -> tunnel`:
+the ISP sees only WireGuard, never a Tor handshake, and the kill
+switch composes — tunnel down means Whonix goes dark rather than
+bootstrapping Tor over clearnet. Verified on hardware. Do not put a
+firewall qube between a gateway and its workstations, though:
+Whonix-Gateway does not respect the qubes-firewall service, so rules
+on qubes behind it have no effect.
 
 ---
 
