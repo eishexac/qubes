@@ -632,6 +632,21 @@ else
 	fail "unknown-zone refusal said the wrong thing"
 fi
 
+# 11a6d. The tree: every owned zone as a painted chain with its health
+# read from the qube, plus the routes footer -- and a pipe sees no
+# escapes.
+TREE=$(cd "$(dirname "$0")/.." && pwd)/wgq/dom0/wgq-tree
+if env PATH="$WORK/bin:$PATH" WGQ_POLICY_DIR="$WORK/policy" sh "$TREE" >"$WORK/out" 2>&1 \
+	&& grep -q 'zone work  ok peer=se-mma' "$WORK/out" \
+	&& grep -q 'sys-firewall -> sys-wgq-work -> sys-fw-work' "$WORK/out" \
+	&& grep -q 'routes: dom0-updates sys-firewall | template-updates stock' "$WORK/out" \
+	&& ! grep -q '\033' "$WORK/out"; then
+	ok "tree draws the chain, the health, and the routes, plainly for pipes"
+else
+	cat "$WORK/out"
+	fail "the tree went wrong"
+fi
+
 # 11a7. The restart cycle: plan first, clients named as going dark, one
 # confirmation; fw down (forced, it stops under clients), vpn down,
 # mgmt down, template down, fw and mgmt back up -- template stays

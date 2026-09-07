@@ -1,0 +1,106 @@
+#!/bin/sh
+#
+# wgq-tree - the whole topology, one screen, painted.
+#
+#     sudo wgq tree
+#
+# Every owned zone as a chain -- uplink -> VPN qube -> firewall qube ->
+# clients -- with its colour, its tunnel state read from the qube that
+# knows (never guessed: a qube that gives no answer says so), the
+# autoconnect stance, and the system routes at the bottom. Read-only;
+# halted qubes are never started to be asked (--no-autostart, like
+# every read in this tool).
+
+set -eu
+
+PROG=${WGQ_PROG:-${0##*/}}
+case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
+# shellcheck source=dom0/msg.sh
+. "$wgq_here/msg.sh"
+
+POLICY_DIR=${WGQ_POLICY_DIR:-/etc/qubes/policy.d}
+
+[ $# -eq 0 ] || {
+	printf 'usage: %s\n' "$PROG" >&2
+	exit 2
+}
+
+is_ours() {
+	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
+	case "$(qvm-prefs "$1" label 2>/dev/null)" in
+		wgq | wgq-*) return 0 ;;
+	esac
+	return 1
+}
+
+sanitize() { tr -cd 'a-zA-Z0-9 .,:=_/-'; }
+
+vpn_probe() {
+	command -v qvm-run >/dev/null 2>&1 || return 9
+	qvm-run --no-gui --no-autostart --pass-io -u root -- "$1" "$2" 2>/dev/null
+}
+
+all_names=$(qvm-ls --raw-data --fields name 2>/dev/null) \
+	|| die "qvm-ls failed; cannot draw anything (is qubesd running?)"
+all_netvms=$(qvm-ls --raw-data --fields name,netvm 2>/dev/null) || all_netvms=''
+
+zones=0
+for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
+	is_ours "$fw" || continue
+	zones=$((zones + 1))
+	zone=${fw#sys-fw-}
+	vpn="sys-wgq-$zone"
+	[ "$zone" = wgq ] && vpn=sys-wgq
+	colour=$(qvm-features "$vpn" wgq.color 2>/dev/null || :)
+	uplink=$(qvm-prefs "$vpn" netvm 2>/dev/null | head -n1 || :)
+
+	# health, from the qube that knows -- or an honest shrug
+	if qvm-check --quiet --running "$vpn" 2>/dev/null; then
+		state=$(vpn_probe "$vpn" 'cat /run/wgq/state' | sanitize) && rc=0 || rc=$?
+		if [ "$rc" -eq 9 ] || [ -z "$state" ]; then
+			health='running (state unreadable)'
+		else
+			health=$state
+		fi
+	else
+		health='halted'
+		if [ "$(qvm-features "$vpn" service.wgq-no-autoconnect 2>/dev/null || :)" = 1 ]; then
+			health='halted (boots sealed: autoconnect off)'
+		fi
+	fi
+
+	case "$uplink" in
+		sys-fw-*) chain_note="  (chained through zone ${uplink#sys-fw-})" ;;
+		*) chain_note='' ;;
+	esac
+
+	printf '%s  %s\n' "$(paint_to 1 "$colour" "zone $zone")" "$health"
+	printf '  %s -> %s -> %s%s\n' "${uplink:-?}" "$vpn" "$fw" "$chain_note"
+	clients=$(printf '%s\n' "$all_netvms" \
+		| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
+	if [ -n "$clients" ]; then
+		printf '  clients: %s\n' "$clients"
+	else
+		printf '  clients: none  (attach: sudo wgq zone attach %s <qube>)\n' "$zone"
+	fi
+done
+[ "$zones" -gt 0 ] || note "no zones exist; create one with: sudo wgq zone add <name>"
+
+# the system routes, so the whole picture is one screen
+r_upd=$(qubes-prefs updatevm 2>/dev/null || :)
+r_clock=$(qubes-prefs clockvm 2>/dev/null || :)
+r_net=$(qubes-prefs default_netvm 2>/dev/null || :)
+if [ -f "$POLICY_DIR/51-wgq-routes.policy" ]; then
+	r_tpl=$(sed -n 's/.*target=\(sys-fw-[a-z0-9-]*\).*/\1/p' "$POLICY_DIR/51-wgq-routes.policy" | head -n1)
+else
+	r_tpl=''
+fi
+via() {
+	case "$1" in
+		sys-fw-*) printf 'zone %s' "${1#sys-fw-}" ;;
+		'') printf 'stock' ;;
+		*) printf '%s' "$1" ;;
+	esac
+}
+printf 'routes: dom0-updates %s | template-updates %s | clock %s | new-qubes %s\n' \
+	"$(via "$r_upd")" "$(via "$r_tpl")" "$(via "$r_clock")" "$(via "$r_net")"
