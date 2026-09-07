@@ -111,11 +111,12 @@ def require_zone(zone: str) -> str:
 def vm_for_zone(zone: str) -> str:
     """The zone's VPN qube name.
 
-    zone 'work' -> sys-wgq-work.  The reserved zone 'wgq' -- the default
-    for single-VPN-for-everything setups -- yields the bare 'sys-wgq'
-    (naive derivation would produce the stutter 'sys-wgq-wgq').  The
-    firewall qube has no exception anywhere: sys-fw-wgq already reads
-    fine and keeps the parseable sys-fw-<zone> grammar.
+    zone 'work' -> sys-wgq-work.  The legacy reserved zone 'wgq' (from
+    installs older than 0.3.0; it can no longer be created) collapses
+    to the bare 'sys-wgq' -- naive derivation would stutter
+    'sys-wgq-wgq'.  Reading that bare name ends in 0.4.0.  The firewall
+    qube has no exception anywhere: sys-fw-wgq reads fine and keeps
+    the parseable sys-fw-<zone> grammar.
     """
     zone = require_zone(zone)
     return "sys-wgq" if zone == "wgq" else f"sys-wgq-{zone}"

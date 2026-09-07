@@ -27,8 +27,9 @@
     sys-firewall. -#}
 {% set label    = salt['pillar.get']('wgq:label', 'wgq') %}
 {% set label_fw = salt['pillar.get']('wgq:label_fw', 'wgq-fw') %}
-{#- The reserved zone 'wgq' (single-VPN default) collapses the VPN qube
-    name to bare sys-wgq; the firewall name follows the normal grammar. -#}
+{#- The legacy reserved zone 'wgq' (pre-0.3.0 installs; creation now
+    refused, reading ends in 0.4.0) collapses the VPN qube name to
+    bare sys-wgq; the firewall name follows the normal grammar. -#}
 {% set vpnq = 'sys-wgq' if zone == 'wgq' else 'sys-wgq-' ~ zone %}
 
 {% if not zone %}

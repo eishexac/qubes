@@ -25,10 +25,12 @@ salt wgq.wg-cli
 # for admin.label.Create/Remove on wgq's own label names, so a later
 # broad admin grant to some management qube can never rewrite them.
 policy 30-wgq-labels.policy
-# Only dom0 makes and dresses qubes: restates the Admin API's deny
-# default for qube creation, cloning and label changes, so it survives
-# any later broad allow. Removable if a management qube must someday
-# create qubes -- but that day should be a decision, not an accident.
+# OPTIONAL -- answer 's' to skip if you run sys-gui or grant a
+# management qube admin.* powers: this restates the Admin API's deny
+# default for qube creation, cloning and label changes so it survives
+# any later broad allow, which is exactly what a GUI domain needs to
+# keep. Skipping it costs wgq nothing today; installing it makes the
+# deny permanent until you remove the file.
 policy 30-wgq-creation.policy
 # Create wgq-mgmt, the provisioning qube. Zones are NOT created here:
 # they are user lifecycle, one deliberate command each --

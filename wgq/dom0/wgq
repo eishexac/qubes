@@ -6,11 +6,12 @@
 #     wgq zone <verb> ...            the zone manager, in dom0 (sudo)
 #     wgq uninstall                  the uninstaller, in dom0 (sudo)
 #     wgq credential <provider>      store the account id in wgq-mgmt
-#     wgq [-z <zone>] sync           peer bundle: wgq-mgmt -> VPN qube,
+#     wgq sync [zone]                peer bundle: wgq-mgmt -> VPN qube,
 #                                    then `wgq apply` there
-#     wgq [-z <zone>] <vpn verb> ..  runs `wgq <verb>` in the zone's VPN
+#     wgq <vpn verb> [zone] ...      runs `wgq <verb>` in the zone's VPN
 #                                    qube (keygen apply switch: as root;
-#                                    pubkey status: as user)
+#                                    pubkey status: as user). The zone is
+#                                    named or picked -- never implied.
 #     wgq <anything else> ...        runs `wgq ...` inside wgq-mgmt
 #
 # Always `sudo wgq ...`: the entrypoint is a symlink into /srv/salt,

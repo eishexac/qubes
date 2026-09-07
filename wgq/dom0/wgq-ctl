@@ -41,7 +41,10 @@ usage() {
 	exit 2
 }
 
-zone=wgq
+# No default zone -- the dispatcher always supplies one; a direct
+# invocation must too ("never a guess" applies to tools as much as
+# humans).
+zone=''
 case "${1:-}" in
 	-z | --zone)
 		[ $# -ge 2 ] || usage
@@ -51,7 +54,8 @@ case "${1:-}" in
 esac
 case "$zone" in
 	-) ;; # the no-zone sentinel, validated against the verb below
-	'' | *[!a-z0-9-]* | -*) die "unusable zone name '$zone'" ;;
+	'') die "a zone is required: $PROG --zone <zone> <verb> (the wgq dispatcher supplies it)" ;;
+	*[!a-z0-9-]* | -*) die "unusable zone name '$zone'" ;;
 esac
 vpn="sys-wgq-$zone"
 [ "$zone" = wgq ] && vpn=sys-wgq

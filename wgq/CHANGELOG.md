@@ -79,6 +79,20 @@ positional. See docs/lifecycle.md as sections land.
 
 ### Fixed
 
+- The rest of the external review: `uninstall` resets system routes
+  **before** removing zones (qubesd refuses to remove a qube a global
+  pref references; the order was backwards) and `zone remove` refuses
+  up front, fix named, when updatevm/clockvm/default_netvm points at
+  the zone. The template now ships `qubes-core-agent-dom0-updates`, so
+  `route dom0-updates <zone>` actually serves dom0 updates (the verb
+  says what other targets need). `30-wgq.policy`'s header stops
+  claiming a footprint of "no scripts"; the creation policy is marked
+  optional in the plan and install doc for sys-gui/admin setups; the
+  Status chronology separates the 0.1.0 run (2026-09-04) from the
+  0.2.0 validation (2026-09-06); stale reserved-zone comments across
+  the dispatcher, cli.py, wg-zone.sls and wgq-ctl now describe the
+  deprecation, and wgq-ctl requires a zone instead of defaulting to
+  one.
 - External review, all findings fixed: the root README and
   CONTRIBUTING still claimed wgq had never run on hardware — both now
   tell the truth, and CONTRIBUTING's most-wanted list asks for what is
