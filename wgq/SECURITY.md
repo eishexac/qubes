@@ -13,6 +13,19 @@ Releases are signed tags. Verify against the maintainer key
 (fingerprint `B387 26F0 61C1 AE22 E287 5F90 57ED 9D12 966B 397C`,
 distribution channels in the repository root's `SECURITY.md`).
 
+## Where things are documented
+
+- [`docs/threat-model.md`](docs/threat-model.md) — what is defended,
+  what is deliberately not, what is refused. Scope questions start and
+  end there.
+- [`docs/verify.md`](docs/verify.md) — how to demonstrate a leak:
+  `wgq verify` and the manual script. A report that arrives as a
+  failing check is worth two that arrive as prose.
+- [`DESIGN.md`](DESIGN.md) — why each decision was made, with the
+  upstream source it came from.
+- [`CHANGELOG.md`](CHANGELOG.md) — what shipped when, if you are
+  pinning a finding to a version.
+
 ## Reporting
 
 Use GitHub's private vulnerability reporting on this repository
