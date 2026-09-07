@@ -139,8 +139,12 @@ fetch() {
 }
 
 tree_hash() {
+	# Contents AND modes: a post-approval chmod +x is a change to what
+	# was approved, and the drift check must see it. stat -c is GNU
+	# (dom0, CI), -f %Lp the BSD spelling (dev machines).
 	# shellcheck disable=SC2086 # SHA may be two words (shasum -a 256)
 	(cd "$1" && find . -type f | LC_ALL=C sort | while read -r f; do
+		printf '%s ' "$(stat -c %a "$f" 2>/dev/null || stat -f %Lp "$f")"
 		$SHA "$f"
 	done | $SHA | cut -d' ' -f1)
 }
@@ -260,9 +264,29 @@ cmd_pull() {
 	rm -rf "$stage/dom0" "$stage/dom0.tar" "$stage/self-diff"
 
 	note "pulling $path/$project from $qube (nothing is installed yet)"
-	fetch "$qube" "$path" "$project" | head -c "$MAX_BYTES" >"$stage/payload.tar" \
-		|| die "transfer from $qube failed"
-	tar -xf "$stage/payload.tar" -C "$stage" || die "payload is not a readable tar"
+	# POSIX sh has no pipefail: capture the transport's own exit through
+	# a status file, so a dead qube reports as a failed transfer instead
+	# of masquerading as an unreadable tar downstream. An oversize
+	# payload trips the same gate: head closing the pipe early fails the
+	# transport, which is the refusal MAX_BYTES is for.
+	{
+		fetch "$qube" "$path" "$project" 2>/dev/null
+		echo "$?" >"$stage/fetch.rc"
+	} | head -c "$MAX_BYTES" >"$stage/payload.tar"
+	[ "$(cat "$stage/fetch.rc" 2>/dev/null)" = 0 ] \
+		|| die "transfer from $qube failed (is the qube running? does $path/$project exist there?)"
+	# Vet the archive BEFORE extraction: tar runs as root in dom0 and the
+	# qube is hostile by assumption, so nothing leans on tar's own
+	# symlink/.. handling. Regular files and directories only, relative
+	# paths only, no '..' components -- refused by listing, then
+	# extracted without ownership restoration.
+	t_types=$(tar -tvf "$stage/payload.tar" 2>/dev/null | grep -v '^[-d]' || :)
+	[ -z "$t_types" ] || die "payload archive holds entries that are not plain files or directories:
+$t_types"
+	t_paths=$(tar -tf "$stage/payload.tar" 2>/dev/null | grep -E '(^/|(^|/)\.\.(/|$))' || :)
+	[ -z "$t_paths" ] || die "payload archive holds absolute or dot-dot paths:
+$t_paths"
+	tar -xf "$stage/payload.tar" -C "$stage" --no-same-owner || die "payload is not a readable tar"
 	rm -f "$stage/payload.tar"
 	[ -d "$stage/$project" ] || die "the qube sent no '$project' directory"
 
@@ -320,15 +344,6 @@ cmd_pull() {
 		printf 'tree=%s\n' "$(tree_hash "$current")"
 	} >"$RECEIPTS/$project"
 	ok "installed $project; receipt written"
-
-	# Self-update through the airlock: `pull <qube> dom0` reviews this very
-	# script like any other tree; if the approved copy differs from the one
-	# running, say so instead of silently staying stale.
-	if [ -f "$current/ingest" ] && [ -f "$0" ] \
-		&& ! diff -q "$current/ingest" "$0" >/dev/null 2>&1; then
-		warn "the reviewed copy at $current/ingest differs from the one running;"
-		warn "install it with: sudo install -m 0755 $current/ingest $0"
-	fi
 	return 0
 }
 

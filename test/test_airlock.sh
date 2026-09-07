@@ -381,6 +381,58 @@ else
 	fail "the accepted self-update went wrong"
 fi
 
+# 19. A hostile archive is refused by LISTING, before extraction ever
+# runs: a symlink entry never touches the staging tree.
+cat >"$WORK/transport-evil" <<'EOF'
+#!/bin/sh
+d=$(mktemp -d)
+mkdir -p "$d/demo"
+printf 'x\n' >"$d/demo/file.txt"
+ln -s /etc/shadow "$d/demo/link"
+tar -C "$d" -cf - demo
+rm -rf "$d"
+EOF
+chmod +x "$WORK/transport-evil"
+if AIRLOCK_TRANSPORT="$WORK/transport-evil" "$INGEST" pull testqube demo "$REPO" >"$WORK/out" 2>&1; then
+	fail "a symlink-bearing archive was accepted"
+elif grep -q 'not plain files or directories' "$WORK/out" \
+	&& ! find "$AIRLOCK_SALT_ROOT" -type l 2>/dev/null | grep -q .; then
+	ok "a symlink in the archive is refused before extraction"
+else
+	cat "$WORK/out"
+	fail "hostile-archive refusal went wrong"
+fi
+
+# 20. A dead transport reports as a failed transfer, not as a broken tar.
+cat >"$WORK/transport-dead" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$WORK/transport-dead"
+if AIRLOCK_TRANSPORT="$WORK/transport-dead" "$INGEST" pull testqube demo "$REPO" >"$WORK/out" 2>&1; then
+	fail "a dead transport exited 0"
+elif grep -q 'transfer from testqube failed' "$WORK/out"; then
+	ok "a dead transport is named as a transfer failure"
+else
+	cat "$WORK/out"
+	fail "dead-transport refusal went wrong"
+fi
+
+# 21. Modes are part of the approval: a chmod after install trips the
+# drift check exactly like edited bytes.
+reset_apply 2>/dev/null || true
+printf '%b' '\nyes\n' | "$INGEST" pull testqube demo "$REPO" >/dev/null 2>&1 || :
+chmod +x "$AIRLOCK_SALT_ROOT/demo/readme.txt"
+if run_apply 'y\n'; then
+	fail "a chmod-drifted tree was applied"
+elif grep -q 'differs from what was approved' "$WORK/out"; then
+	ok "a post-approval chmod is drift, and drift is refused"
+else
+	cat "$WORK/out"
+	fail "chmod-drift refusal went wrong"
+fi
+chmod -x "$AIRLOCK_SALT_ROOT/demo/readme.txt"
+
 if [ "$failures" -gt 0 ]; then
 	printf '%s failure(s)\n' "$failures"
 	exit 1
