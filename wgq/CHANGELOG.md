@@ -58,6 +58,25 @@ positional. See docs/lifecycle.md as sections land.
   one accepted yes re-runs the pull with the new tool. The
   unknown-verb refusal points there.
 
+### Security
+
+- `wgq panic`'s upstream deny-all never worked: it called a
+  `qvm-firewall set-policy` subcommand that does not exist (upstream
+  has exactly add/del/list/reset), the error was silenced, and the
+  harness mock accepted any subcommand — so the tests enshrined the
+  bug while the kill alone took zones dark. The persistent block is
+  now the real idiom (reset, then delete the accept-all rule 0,
+  leaving the implicit drop), the mock rejects unknown subcommands
+  like the real tool, and the tests assert the real calls. Found by
+  external review.
+- `sync` installed the received conf text verbatim (after validating
+  its sidecar and origin placeholder) — and wg-quick executes
+  PostUp/PreUp lines as root, so a compromised wgq-mgmt could have run
+  code in every zone qube at the next tunnel start. The installed conf
+  is now re-rendered from the validated Peer alone; mgmt's reach is
+  capped at what the validators admit. The threat model now states
+  mgmt's actual trust position. Found by external review.
+
 ### Fixed
 
 - External review, all findings fixed: the root README and

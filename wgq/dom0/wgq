@@ -170,9 +170,17 @@ panic_zone() {
 	p_vpn=$(vpn_name "$p_zone")
 	if qvm-check --quiet "$p_fw" 2>/dev/null; then
 		note "$p_zone: blocking $p_fw (deny-all, enforced upstream, survives restart)"
-		qvm-firewall "$p_fw" reset 2>/dev/null || true
-		qvm-firewall "$p_fw" set-policy drop 2>/dev/null \
-			|| warn "$p_zone: could not set deny-all on $p_fw"
+		# qvm-firewall has exactly add/del/list/reset -- no set-policy
+		# (upstream qubesadmin/tools/qvm_firewall.py; fwrules.py in this
+		# repo documents the same idiom). reset installs a single
+		# accept-all rule; deleting rule 0 leaves the implicit drop,
+		# which is the deny-all and survives restarts. An external
+		# review found the old set-policy call had never worked and the
+		# harness mock had been swallowing it.
+		qvm-firewall "$p_fw" reset 2>/dev/null \
+			|| warn "$p_zone: could not reset the firewall on $p_fw"
+		qvm-firewall "$p_fw" del --rule-no 0 2>/dev/null \
+			|| warn "$p_zone: could not install deny-all on $p_fw (the kill below still takes the zone dark)"
 	fi
 	if qvm-check --quiet "$p_vpn" 2>/dev/null; then
 		note "$p_zone: killing $p_vpn"

@@ -188,7 +188,7 @@ def apply_bundle(bundle: Path) -> list[str]:
     if not names:
         raise UsageError(f"no peer configs found in {bundle}")
 
-    staged: list[tuple[Peer, str]] = []
+    staged: list[Peer] = []
     for name in names:
         peer = source.load(name)
         text = source.conf_path(name).read_text(encoding="ascii")
@@ -197,14 +197,22 @@ def apply_bundle(bundle: Path) -> list[str]:
                 f"{name}.conf does not contain {PLACEHOLDER}. wgq only installs "
                 "configs it generated; a config carrying someone else's key is refused."
             )
-        staged.append((peer, text))
+        # The received text proves its origin (the placeholder) and is
+        # then DISCARDED: what gets installed is re-rendered from the
+        # validated Peer alone. wg-quick executes PostUp/PreUp lines as
+        # root, so installing mgmt's bytes verbatim would hand a
+        # compromised wgq-mgmt root in every zone qube -- found by
+        # external review. Rendering from the validated fields caps
+        # mgmt's reach at what the validators admit: endpoints, keys,
+        # addresses, a resolver.
+        staged.append(peer)
 
     ensure_dirs()
     secret = _read_private_key()
     installed = []
-    for peer, text in staged:
+    for peer in staged:
         target = peer_dir()
-        _write(target.conf_path(peer.name), text.replace(PLACEHOLDER, secret), 0o600)
+        _write(target.conf_path(peer.name), peer.conf_text(secret), 0o600)
         _write(target.meta_path(peer.name), peer.meta_text(), 0o644)
         installed.append(peer.name)
     return installed

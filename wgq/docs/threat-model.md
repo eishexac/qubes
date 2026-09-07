@@ -18,6 +18,14 @@ every claim here is sourced line by line in [DESIGN.md](../DESIGN.md).
 
 **What it does not protect against**
 
+- A compromised `wgq-mgmt` choosing your servers. Peer configs are
+  re-rendered in the zone qube from validated fields only (endpoints,
+  keys, addresses, a resolver — never executable lines), so mgmt
+  cannot run code in a zone; but it picks which provider servers and
+  resolver your traffic trusts, and it holds the account credential.
+  Mgmt is a trusted component with a deliberately small surface, not a
+  contained one.
+
 - Your VPN provider. They see everything the tunnel carries. This project
   moves trust; it does not remove it.
 - Traffic correlation by anyone watching both ends.

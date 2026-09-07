@@ -25,12 +25,25 @@ cat >"$WORK/bin/qvm-run" <<'EOF'
 printf '%s\n' "$*" >> "${QLOG:?}"
 EOF
 # panic's tools log to the same file so order and targets can be pinned.
-for t in qvm-firewall qvm-kill; do
-	cat >"$WORK/bin/$t" <<EOF
+# The firewall mock validates its subcommand: upstream qvm-firewall
+# knows exactly add/del/list/reset, and a mock that logs anything let a
+# nonexistent set-policy call pass its tests for two releases. Mocks
+# must reject what the real tool rejects.
+cat >"$WORK/bin/qvm-firewall" <<'EOF'
 #!/bin/sh
-printf '$t %s\n' "\$*" >> "\${QLOG:?}"
+case "${2:-}" in
+	add | del | list | reset) ;;
+	*)
+		printf 'qvm-firewall: unknown subcommand %s\n' "${2:-}" >&2
+		exit 2
+		;;
+esac
+printf 'qvm-firewall %s\n' "$*" >> "${QLOG:?}"
 EOF
-done
+cat >"$WORK/bin/qvm-kill" <<'EOF'
+#!/bin/sh
+printf 'qvm-kill %s\n' "$*" >> "${QLOG:?}"
+EOF
 cat >"$WORK/bin/qvm-check" <<'EOF'
 #!/bin/sh
 # Every sys-fw-* / sys-wgq* the tests reference "exists".
@@ -164,11 +177,12 @@ fi
 
 # 11. panic -z blocks the firewall THEN kills the VPN qube, one zone.
 if wgq panic -z work >"$WORK/out" 2>&1 \
-	&& grep -q 'qvm-firewall sys-fw-work set-policy drop' "$QLOG" \
+	&& grep -q 'qvm-firewall sys-fw-work reset' "$QLOG" \
+	&& grep -q 'qvm-firewall sys-fw-work del --rule-no 0' "$QLOG" \
 	&& grep -q 'qvm-kill sys-wgq-work' "$QLOG" \
 	&& ! grep -q 'sys-fw-wgq' "$QLOG"; then
-	# order: firewall line must precede the kill line
-	fwline=$(grep -n 'qvm-firewall sys-fw-work set-policy' "$QLOG" | cut -d: -f1)
+	# order: the deny-all must land before the kill
+	fwline=$(grep -n 'qvm-firewall sys-fw-work del --rule-no 0' "$QLOG" | cut -d: -f1)
 	killline=$(grep -n 'qvm-kill sys-wgq-work' "$QLOG" | cut -d: -f1)
 	if [ "$fwline" -lt "$killline" ]; then
 		ok "panic -z blocks then kills one zone"
@@ -184,7 +198,7 @@ fi
 if wgq panic >"$WORK/out" 2>&1 \
 	&& grep -q 'qvm-kill sys-wgq' "$QLOG" \
 	&& grep -q 'qvm-kill sys-wgq-work' "$QLOG" \
-	&& grep -q 'qvm-firewall sys-fw-wgq set-policy drop' "$QLOG"; then
+	&& grep -q 'qvm-firewall sys-fw-wgq del --rule-no 0' "$QLOG"; then
 	ok "bare panic stops every zone"
 else
 	cat "$WORK/out" "$QLOG" 2>/dev/null
