@@ -329,9 +329,10 @@ validate_step() {
 			;;
 		*)
 			die "$v_plan:$v_line: unknown verb '$v_verb' (this tool knows: salt, salt-target, policy, template, note).
-If the plan comes from a newer tree than this installed tool, update the tool through its own airlock:
-    $PROG pull <qube> dom0 <repo-path>
-and follow the install note it prints."
+If the plan comes from a newer tree than this installed tool, update the tool the way it was first installed -- read what changed, then replace it:
+    qvm-run --pass-io <qube> 'cat <repo-path>/dom0/airlock' > /tmp/airlock
+    diff /usr/local/bin/airlock /tmp/airlock | less
+    sudo install -m 0755 /tmp/airlock /usr/local/bin/airlock"
 			;;
 	esac
 }

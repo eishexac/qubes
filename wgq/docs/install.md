@@ -93,6 +93,14 @@ six `*-wgq*.svg` files.
 
 ---
 
+## Updating the airlock itself
+
+The airlock validates a plan in full before running any of it, so a
+plan verb newer than the installed tool is refused up front with
+nothing half-applied. The fix is the first-install flow again: stream
+the new file out of the qube, read the diff, `install` it, re-run
+`apply`.
+
 ## Uninstall
 
 Full teardown is `sudo wgq uninstall`: zones first
