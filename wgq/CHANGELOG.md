@@ -29,6 +29,13 @@ positional. See docs/lifecycle.md as sections land.
   stored as a feature on the VPN qube, travels through `rename`, and
   is freed by `remove`. Icons and qube labels are deliberately
   untouched.
+- `wgq route`: Qubes' system-level network consumers — dom0 updates,
+  template updates, clock sync, new qubes' default netvm — routed
+  through a zone of your choosing, one grammar, `route list` as the
+  overview. Everything routed inherits fail-closed. The one policy
+  write (template updates) prints its exact file first and installs on
+  yes, sorted at 51 so Whonix templates keep updating over Tor; clock
+  routing explains the cold-boot paradox and asks twice.
 - `wgq restart [zone]`: the shutdown/start cycle that makes an update
   real, offered — the plan prints first, the clients that go dark are
   named, one confirmation, declining runs nothing. The install plan now

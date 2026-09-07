@@ -191,20 +191,25 @@ zone `wgq` (bare `sys-wgq` + `sys-fw-wgq`) keeps working while
 deprecated: migrate it with `zone rename wgq <name>`; reading the bare
 name ends in 0.4.0.
 
-**System services**, if you want them tunnelled, point at a zone's
-firewall qube like anything else — picking *which* zone is the decision
-that matters, and it is yours:
+**System services** are a consumer decision, one grammar:
 
 ```sh
-qvm-service sys-fw-<zone> qubes-updates-proxy on   # template updates
-# /etc/qubes/policy.d/30-user.policy:
-#   qubes.UpdatesProxy * @type:TemplateVM @default allow target=sys-fw-<zone>
-qubes-prefs updatevm <qube-behind-the-zone>        # dom0 updates
-qvm-prefs sys-whonix netvm sys-fw-<zone>           # tor over vpn
+sudo wgq route list                    # every role, where it goes, why
+sudo wgq route dom0-updates work
+sudo wgq route template-updates work   # prints the policy line, installs on yes;
+                                       # Whonix templates keep their Tor route
+sudo wgq route new-qubes work
+sudo wgq route clock work              # allowed, but argued with (see below)
+sudo wgq route dom0-updates default    # back to stock
 ```
 
-Leave `clockvm` on `sys-net`: WireGuard handshakes need sane time, and a
-clock that needs the tunnel that needs the clock can wedge a cold boot.
+Tor gateways are ordinary clients: `sudo wgq zone attach work sys-whonix`.
+
+Clock sync carries a paradox worth understanding before routing it:
+WireGuard re-handshakes can fail on a badly wrong clock, and a clock
+source *behind* the tunnel can then never fix the clock — a cold boot
+with a drifted RTC can wedge until you route clock elsewhere. The verb
+says so and asks twice.
 Everything routed through a zone inherits fail-closed — tunnel down means
 those services stop until `wgq switch` succeeds.
 
