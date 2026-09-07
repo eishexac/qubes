@@ -700,7 +700,12 @@ Everything routed through a zone inherits the kill switch: tunnel down
 means that system function stops, never leaks.
 
 The one write bigger than a pref is the template-updates policy line,
-and its filename is load-bearing: `51-wgq-routes.policy`. Whonix's
+and its filename is load-bearing: `51-wgq-routes.policy`. (Three sort
+namespaces coexist in this project and their numbers are unrelated:
+dom0's `/etc/qubes/policy.d/` holds the identity denies at `30-*` and
+this routes file at `51`; the in-qube
+`/etc/qubes/qubes-firewall.d/50-wgq` is a different directory with its
+own ordering, and its 50 has nothing to do with Whonix's policy 50.) Whonix's
 tag-matched UpdatesProxy rules sort at 50 and must keep winning, so
 Whonix templates keep updating over Tor; every other template falls
 through to the chosen zone. A lower sort would have silently
