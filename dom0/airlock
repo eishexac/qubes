@@ -76,6 +76,9 @@ QUBESCTL="${AIRLOCK_QUBESCTL:-qubesctl}"
 POLICY_DIR="${AIRLOCK_POLICY_DIR:-/etc/qubes/policy.d}"
 QVM_TEMPLATE="${AIRLOCK_QVM_TEMPLATE:-qvm-template}"
 QVM_CHECK="${AIRLOCK_QVM_CHECK:-qvm-check}"
+# where this tool lives when installed; pull compares the repo's copy
+# against it and offers the replacement first
+SELF="${AIRLOCK_SELF:-/usr/local/bin/airlock}"
 
 if command -v sha256sum >/dev/null 2>&1; then
 	SHA=sha256sum
@@ -220,6 +223,42 @@ cmd_pull() {
 	stage=$(mktemp -d) || die "cannot create a staging directory"
 	trap 'rm -rf "$stage"' EXIT INT TERM
 
+	# The tree may be newer than this tool: its own airlock travels in
+	# the repo's dom0/. Fetch that FIRST and, when it differs from the
+	# installed copy, offer the replacement -- read what will replace
+	# me. Declining is safe: a plan verb this tool does not know is
+	# refused whole, later.
+	if fetch "$qube" "$path" dom0 2>/dev/null | head -c "$MAX_BYTES" >"$stage/dom0.tar" \
+		&& tar -xf "$stage/dom0.tar" -C "$stage" dom0/airlock 2>/dev/null \
+		&& [ -s "$stage/dom0/airlock" ]; then
+		if ! cmp -s "$stage/dom0/airlock" "$SELF" 2>/dev/null; then
+			note "the repo carries a DIFFERENT airlock than the installed one"
+			diff -u "$SELF" "$stage/dom0/airlock" >"$stage/self-diff" 2>&1 || true
+			printf 'Open the diff in %s? [Y/n] ' "$PAGER"
+			sd_open=""
+			read -r sd_open || true
+			case "$sd_open" in
+				n | no) warn "diff skipped -- you would be running bytes you have not read" ;;
+				*) $PAGER "$stage/self-diff" ;;
+			esac
+			printf 'Install it and re-run this pull with the new tool? [y/N] '
+			sd_ans=""
+			read -r sd_ans || sd_ans=n
+			case "$sd_ans" in
+				y | yes)
+					sh -n "$stage/dom0/airlock" || die "the new airlock does not parse; not installing it"
+					install -m 0755 "$stage/dom0/airlock" "$SELF" || die "could not install to $SELF"
+					ok "airlock updated; re-running this pull with the new tool"
+					exec "$SELF" pull "$qube" "$project" "$path"
+					;;
+				*) note "continuing with the current tool" ;;
+			esac
+		fi
+	else
+		note "could not read the repo's dom0/airlock; continuing with the current tool"
+	fi
+	rm -rf "$stage/dom0" "$stage/dom0.tar" "$stage/self-diff"
+
 	note "pulling $path/$project from $qube (nothing is installed yet)"
 	fetch "$qube" "$path" "$project" | head -c "$MAX_BYTES" >"$stage/payload.tar" \
 		|| die "transfer from $qube failed"
@@ -329,10 +368,10 @@ validate_step() {
 			;;
 		*)
 			die "$v_plan:$v_line: unknown verb '$v_verb' (this tool knows: salt, salt-target, policy, template, note).
-If the plan comes from a newer tree than this installed tool, update the tool the way it was first installed -- read what changed, then replace it:
-    qvm-run --pass-io <qube> 'cat <repo-path>/dom0/airlock' > /tmp/airlock
-    diff /usr/local/bin/airlock /tmp/airlock | less
-    sudo install -m 0755 /tmp/airlock /usr/local/bin/airlock"
+If the plan comes from a newer tree than this installed tool, re-run the pull:
+    $PROG pull <qube> <project> <repo-path>
+It fetches the repo's own airlock first and, when it differs from this
+one, shows the diff and offers to install it before anything else."
 			;;
 	esac
 }
