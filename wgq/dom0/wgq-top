@@ -1,0 +1,141 @@
+#!/bin/sh
+#
+# wgq-top - one zone's tunnel, live.
+#
+#     sudo wgq top <zone>            # live panel, Ctrl-C leaves
+#     sudo wgq top <zone> --once     # one plain snapshot (scriptable)
+#
+# Handshake age, transfer rates, and the kill-switch drop counter --
+# the number that says the seal is WORKING, not just installed: every
+# packet a client tried to push outside the tunnel, counted live.
+#
+# One streaming loop runs INSIDE the qube and dom0 only renders; a
+# qvm-run per sample would pay qrexec setup every tick (the design
+# page's one implementation commandment for this tool).
+
+set -eu
+
+PROG=${WGQ_PROG:-${0##*/}}
+case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
+# shellcheck source=dom0/msg.sh
+. "$wgq_here/msg.sh"
+
+INTERVAL=${WGQ_TOP_INTERVAL:-2}
+
+usage() {
+	printf 'usage: %s <zone> [--once]\n' "$PROG" >&2
+	exit 2
+}
+
+zone=''
+once=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--once) once=1 ;;
+		-*) usage ;;
+		*)
+			[ -z "$zone" ] || usage
+			zone=$1
+			;;
+	esac
+	shift
+done
+[ -n "$zone" ] || usage
+case "$zone" in
+	*[!a-z0-9-]*) die "unusable zone name '$zone'" ;;
+esac
+vpn="sys-wgq-$zone"
+[ "$zone" = wgq ] && vpn=sys-wgq
+
+qvm-check --quiet "sys-fw-$zone" 2>/dev/null || die "zone '$zone' does not exist"
+qvm-check --quiet --running "$vpn" 2>/dev/null || die "$vpn is halted; nothing to watch (sudo wgq connect $zone)"
+
+is_ours() {
+	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
+	case "$(qvm-prefs "$1" label 2>/dev/null)" in
+		wgq | wgq-*) return 0 ;;
+	esac
+	return 1
+}
+is_ours "$vpn" || die "$vpn was not created by wgq; not mine to watch"
+
+colour=$(qvm-features "$vpn" wgq.color 2>/dev/null || :)
+
+# The in-qube sampler: one line per tick, fields separated by spaces --
+#   tick <epoch> <handshake-epoch> <rx-bytes> <tx-bytes> <drop-pkts> <state>
+# (state's spaces become underscores for the line format; dom0 undoes it).
+# shellcheck disable=SC2016 # non-expansion is the point: this string is
+# the program the QUBE runs; every $ in it belongs to that shell
+SAMPLER='while :; do
+	hs=$(wg show wg0 latest-handshakes 2>/dev/null | awk "{print \$2; exit}")
+	set -- $(wg show wg0 transfer 2>/dev/null | awk "{print \$2, \$3; exit}")
+	drops=$(nft list chain ip qubes custom-forward 2>/dev/null \
+		| sed -n "s/.*counter packets \([0-9]*\).*drop.*/\1/p" | head -n1)
+	printf "tick %s %s %s %s %s %s\n" "$(date +%s)" "${hs:-0}" "${1:-0}" "${2:-0}" "${drops:-0}" \
+		"$(tr " " "_" < /run/wgq/state 2>/dev/null || echo unknown)"
+	INTERVAL_SLOT
+	sleep INTERVAL_VAL
+done'
+
+human() { # bytes -> human
+	awk -v b="$1" 'BEGIN {
+		split("B KB MB GB TB", u, " ")
+		i = 1
+		while (b >= 1024 && i < 5) { b /= 1024; i++ }
+		printf (i == 1 ? "%d %s" : "%.1f %s"), b, u[i]
+	}'
+}
+
+render() { # <now> <hs> <rx> <tx> <drops> <state> <prev_rx> <prev_tx> <prev_drops> <dt>
+	r_age=$(($1 - $2))
+	[ "$2" -eq 0 ] && r_age=-1
+	r_rxr=$((($3 - $7) / ${10}))
+	r_txr=$((($4 - $8) / ${10}))
+	r_dd=$(($5 - $9))
+	if [ "$once" -eq 0 ] && colour_to 1; then
+		printf '\033[H\033[2J'
+	fi
+	printf '%s  %s\n' "$(paint_to 1 "$colour" "zone $zone")" "$(printf '%s' "$6" | tr '_' ' ' | tr -cd 'a-zA-Z0-9 .,:=_/-')"
+	if [ "$r_age" -lt 0 ]; then
+		printf 'handshake: never\n'
+	else
+		printf 'handshake: %ss ago\n' "$r_age"
+	fi
+	printf 'rx %s/s (total %s)   tx %s/s (total %s)\n' \
+		"$(human "$r_rxr")" "$(human "$3")" "$(human "$r_txr")" "$(human "$4")"
+	printf 'kill-switch drops: %s' "$5"
+	if [ "$r_dd" -gt 0 ]; then
+		printf '  (+%s THIS TICK: something just tried to leave outside the tunnel)' "$r_dd"
+	fi
+	printf '\n'
+	[ "$once" -eq 1 ] || printf '\n(Ctrl-C leaves; the zone is untouched)\n'
+}
+
+prev_rx=0 prev_tx=0 prev_drops=0 first=1
+
+if [ "$once" -eq 1 ]; then
+	body=$(printf '%s' "$SAMPLER" | sed -e 's/INTERVAL_SLOT/break/' -e "s/INTERVAL_VAL/$INTERVAL/")
+	line=$(qvm-run --no-gui --no-autostart --pass-io -u root -- "$vpn" "$body" | head -n1)
+	# shellcheck disable=SC2086 # deliberate word splitting of the tick line
+	set -- $line
+	[ "${1:-}" = tick ] || die "the sampler returned nothing usable from $vpn"
+	shift
+	render "$1" "$2" "$3" "$4" "$5" "$6" 0 0 "$5" 1
+	exit 0
+fi
+
+[ -t 1 ] || die "top is interactive; use '$PROG top $zone --once' (or wgq status/tree) in scripts"
+
+body=$(printf '%s' "$SAMPLER" | sed -e 's/INTERVAL_SLOT/:/' -e "s/INTERVAL_VAL/$INTERVAL/")
+trap 'printf "\n"; exit 0' INT TERM
+qvm-run --no-gui --no-autostart --pass-io -u root -- "$vpn" "$body" | while read -r tag now hs rx tx drops state; do
+	[ "$tag" = tick ] || continue
+	if [ "$first" -eq 1 ]; then
+		prev_rx=$rx prev_tx=$tx prev_drops=$drops first=0
+		dt=1
+	else
+		dt=$INTERVAL
+	fi
+	render "$now" "$hs" "$rx" "$tx" "$drops" "$state" "$prev_rx" "$prev_tx" "$prev_drops" "$dt"
+	prev_rx=$rx prev_tx=$tx prev_drops=$drops
+done

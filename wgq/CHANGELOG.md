@@ -29,6 +29,11 @@ positional. See docs/lifecycle.md as sections land.
   stored as a feature on the VPN qube, travels through `rename`, and
   is freed by `remove`. Icons and qube labels are deliberately
   untouched.
+- `wgq top <zone>` (`--once` for scripts): the tunnel live — handshake
+  age, transfer rates, and the kill-switch drop counter, the number
+  that says the seal is working, not just installed: every packet a
+  client tried to push outside the tunnel, counted as it happens. One
+  streaming loop runs inside the qube; dom0 only renders.
 - `wgq tree`: the whole topology on one screen — every zone as a
   painted chain (uplink → VPN qube → firewall → clients) with its
   tunnel state read from the qube that knows, the autoconnect stance,

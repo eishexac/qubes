@@ -186,6 +186,7 @@ name=$1
 shift
 printf 'run %s: %s\n' "$name" "$*" >> "${QCTL_LOG:?}"
 case "$*" in
+	*"latest-handshakes"*) printf 'tick 1000 988 1048576 524288 42 ok_peer=se-mma_dns=10.64.0.1\n' ;;
 	*"cat /run/wgq/state"*) printf 'ok peer=se-mma dns=10.64.0.1\n' ;;
 	*"cat /rw/config/wg/dns"*) exit 1 ;;
 	*"test -f /rw/config/wg/dns"*) exit 1 ;;
@@ -645,6 +646,21 @@ if env PATH="$WORK/bin:$PATH" WGQ_POLICY_DIR="$WORK/policy" sh "$TREE" >"$WORK/o
 else
 	cat "$WORK/out"
 	fail "the tree went wrong"
+fi
+
+# 11a6e. top --once: one snapshot, plain, with the kill-switch drop
+# counter front and centre.
+TOP=$(cd "$(dirname "$0")/.." && pwd)/wgq/dom0/wgq-top
+if env PATH="$WORK/bin:$PATH" sh "$TOP" work --once >"$WORK/out" 2>&1 \
+	&& grep -q 'zone work  ok peer=se-mma' "$WORK/out" \
+	&& grep -q 'handshake: 12s ago' "$WORK/out" \
+	&& grep -q 'kill-switch drops: 42' "$WORK/out" \
+	&& grep -q 'rx 1.0 MB/s (total 1.0 MB)' "$WORK/out" \
+	&& ! grep -q '\033' "$WORK/out"; then
+	ok "top --once snapshots handshake, rates and drops, plainly"
+else
+	cat "$WORK/out"
+	fail "top --once went wrong"
 fi
 
 # 11a7. The restart cycle: plan first, clients named as going dark, one
