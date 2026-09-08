@@ -93,6 +93,12 @@ else
 	bad tree "$ENTRY missing or dangling" "sudo airlock apply wgq"
 fi
 
+if command -v fzf >/dev/null 2>&1; then
+	row environment "fzf installed: pickers are fuzzy"
+else
+	row environment "fzf not installed; pickers use the numbered menu (optional: sudo qubes-dom0-update fzf)"
+fi
+
 # -- ownership: everything wearing our names is ours ------------------------
 
 # One listing, taken once: a checker that cannot enumerate must say so,
@@ -185,7 +191,7 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 			;;
 		broken:*)
 			bad "$sect" "firewall state is '$state': the qube sealed itself" \
-				"sudo wgq -z $zone switch <peer>   (and read: journalctl -t wgq-firewall in $vpn)"
+				"sudo wgq -z $zone switch <peer>   (and read: sudo wgq logs $zone)"
 			;;
 		degraded:*)
 			bad "$sect" "firewall state is '$state': clients have no DNS" \

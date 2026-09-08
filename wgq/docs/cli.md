@@ -9,7 +9,10 @@ everything:
    `wgq disconnect work`.
 2. **Nothing is implied.** Name no zone and, on a terminal, a picker
    asks — even with one zone. Without a terminal the command refuses
-   and lists the zones: scripts get neither prompts nor guesses.
+   and lists the zones: scripts get neither prompts nor guesses. The
+   picker is a numbered menu from the standard library; with `fzf`
+   installed in dom0 (`sudo qubes-dom0-update fzf` — Fedora's own
+   repo, no new trust anchor) it upgrades to fuzzy typing.
 3. **`-z <zone>` works anywhere** on the line and means the same thing
    in every position. `--zone` *after* a management verb belongs to
    that verb's own CLI inside the qube.
@@ -160,6 +163,18 @@ zone work      ok peer=se-mma-wg-001 dns=9.9.9.9 · hs 12s
   └─ work         down 1.1GB · up 204.7MB
   └─ media        down 320.6MB · up 88.1MB
 ```
+
+```console
+$ sudo wgq logs work
+── zone work ── the last 100 lines, merged ──
+2026-09-08T09:14:02 wgq-firewall: kill switch installed
+2026-09-08T09:14:03 wg-tunnel[412]: up: peer se-mma-wg-001, endpoint 149.22.83.100:2049
+```
+
+`logs <zone>` is the zone's journal — the firewall script's lines, the
+tunnel unit and the qubes-firewall daemon, interleaved by journald
+itself; `-f` follows live, `-n`/`--since` scope it, and everything a
+qube prints is stripped to printing characters first.
 
 The drop counter is the seal working, live: a tick where it moves says
 `(+3 THIS TICK: something tried to leave outside the tunnel)`.

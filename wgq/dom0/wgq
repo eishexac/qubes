@@ -57,6 +57,7 @@ usage() {
 	printf '       %s doctor                    (check every wgq invariant, with fixes)\n' "$PROG" >&2
 	printf '       %s tree                      (every zone: chain, health, colour, routes)\n' "$PROG" >&2
 	printf '       %s top [zone] [--once]       (full-screen dashboard: rates, drops, clients)\n' "$PROG" >&2
+	printf '       %s logs <zone> [-n N] [-f]   (the zone journal, merged and labeled)\n' "$PROG" >&2
 	printf '       %s restart [zone]            (offered shutdown/start cycle after updates)\n' "$PROG" >&2
 	printf '       %s route [list|<role> <zone>|default]  (system traffic, your choice of zone)\n' "$PROG" >&2
 	printf '       %s connect|disconnect [zone]  (aliases up|down; dark -- never clear)\n' "$PROG" >&2
@@ -326,6 +327,16 @@ case "$verb" in
 		# IS the overview, and filtering to one zone is the option
 		WGQ_PROG="$PROG top" export WGQ_PROG
 		exec "$wgq_here/wgq-top" ${zone:+"$zone"} "$@"
+		;;
+	logs)
+		shift
+		if [ -z "$zone" ] && [ $# -ge 1 ] && is_owned_zone "$1"; then
+			zone=$1
+			shift
+		fi
+		[ -n "$zone" ] || zone=$(pick_zone 0)
+		WGQ_PROG="$PROG logs" export WGQ_PROG
+		exec "$wgq_here/wgq-logs" "$zone" "$@"
 		;;
 	tree)
 		shift
