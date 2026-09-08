@@ -64,6 +64,12 @@ positional. See docs/lifecycle.md as sections land.
   exactly what would run and execute nothing (`credential` reads no
   secret under it); the dom0-native verbs that already print a plan
   before asking say so instead of faking a second dry layer.
+- `docs/validation.md`: the hardware run sheet — nine referenceable
+  checkpoints (V1–V9) from install to the desktop's every icon
+  surface, with the expected result beside each step. CONTRIBUTING
+  gains issue requirements (software environment only — hardware
+  identity is asked out — raw output, a checkpoint or command per
+  finding), and the repository gains matching issue templates.
 - Bash completion for the dom0 entrypoint: verbs, live zone names, and
   the sub-verbs of `zone`/`route`/`set`; installed by the CLI state,
   removed by uninstall.

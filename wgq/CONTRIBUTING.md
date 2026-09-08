@@ -16,6 +16,33 @@ README's Status). What is still unobserved is worth more than a patch:
 
 Paste the raw output into an issue. Do not tidy it up.
 
+## Filing an issue
+
+Every issue needs three things; the templates ask for them:
+
+1. **The software environment, never the hardware.** Qubes release,
+   wgq tag or commit, template base, provider, and whether `fzf` is in
+   dom0 (the table in
+   [docs/validation.md](docs/validation.md#what-to-record--software-never-hardware)).
+   wgq is software on Qubes OS: the machine's make and model determine
+   nothing about its behavior, and naming hardware only narrows who a
+   report could be about. Reports naming hardware will be asked to
+   edit it out.
+2. **Raw output, untidied.** The exact bytes of the failing command —
+   a `verify` check gone red, a `doctor` FAIL with its printed fix, a
+   refusal message. A failing check is worth two pages of prose; a
+   screenshot of text is worth less than the text.
+3. **A checkpoint or a command, not a vibe.** Validation findings name
+   the checkpoint ID (V1–V9 in
+   [docs/validation.md](docs/validation.md)); bug reports name the
+   exact command and what was expected instead. One finding per issue.
+
+Two hard rules: a **leak** — traffic reaching the clear when the
+design says it must not — goes through private vulnerability
+reporting ([SECURITY.md](SECURITY.md)), never a public issue; and
+never paste an account number or a private key (wgq prints neither,
+but a hand-run `wg show` might).
+
 ## Running the checks
 
 ```sh
