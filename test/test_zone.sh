@@ -445,17 +445,33 @@ done
 doctor() {
 	env PATH="$WORK/bin:$PATH" WGQ_ICON_DIR="$WORK/icons" \
 		WGQ_POLICY_DIR="$WORK/policy" WGQ_SALT_DIR="$WORK/salt" \
-		WGQ_ENTRY="$DOCTOR" sh "$DOCTOR"
+		WGQ_ENTRY="$DOCTOR" sh "$DOCTOR" "$@"
 }
 if doctor >"$WORK/out" 2>&1 \
-	&& grep -q 'chain sys-fw-work -> sys-wgq-work -> sys-firewall ok' "$WORK/out" \
-	&& grep -q 'dataplane checks skipped' "$WORK/out" \
-	&& grep -q 'icons 6/6 ok' "$WORK/out" \
-	&& grep -q 'nothing broken' "$WORK/out"; then
-	ok "doctor passes a healthy machine, skips what it cannot probe"
+	&& grep -q '^ok    zone work  chain sys-fw-work -> sys-wgq-work -> sys-firewall' "$WORK/out" \
+	&& grep -q '^skip ' "$WORK/out" \
+	&& grep -q 'icons 6/6' "$WORK/out" \
+	&& grep -qE 'nothing broken \([0-9]+ ok' "$WORK/out"; then
+	ok "doctor scans: gutter, tally, honest skips"
 else
 	cat "$WORK/out"
 	fail "doctor mis-judged a healthy machine"
+fi
+
+# 11a2b. doctor --json: the same findings as one machine document,
+# nothing human on stdout.
+if doctor --json >"$WORK/out" 2>/dev/null \
+	&& python3 -c "
+import json
+doc = json.load(open('$WORK/out'))
+assert doc['broken'] == 0, doc
+assert any(r['status'] == 'ok' and 'chain' in r['text'] for r in doc['findings'])
+assert any(r['status'] == 'skip' for r in doc['findings'])
+"; then
+	ok "doctor --json emits the findings as one parseable document"
+else
+	cat "$WORK/out"
+	fail "doctor --json went wrong"
 fi
 
 # 11a3. doctor: rewire the zone's firewall qube behind wgq's back -- the

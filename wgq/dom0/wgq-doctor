@@ -30,15 +30,48 @@ SALT_DIR=${WGQ_SALT_DIR:-/srv/salt/wgq}
 ENTRY=${WGQ_ENTRY:-/usr/local/bin/wgq}
 TEMPLATE=${WGQ_TEMPLATE:-debian-13-wgq}
 
-failed=0
-row() { # row <section> <text>
-	printf '%-10s %s\n' "$1" "$2"
+json=0
+[ "${1:-}" = --json ] && json=1
+[ $# -le 1 ] || {
+	printf 'usage: %s [--json]\n' "$PROG" >&2
+	exit 2
 }
-bad() { # bad <section> <text> <fix command>
-	failed=$((failed + 1))
-	printf '%-10s FAIL: %s\n' "$1" "$2"
-	printf '%-10s fix:  %s\n' '' "$3"
+
+ok_n=0 fail_n=0 note_n=0 skip_n=0
+records=$(mktemp)
+trap 'rm -f "$records"' EXIT INT TERM
+
+# Doctor is SCANNED, not read: the verdict lives in a fixed left gutter
+# (painted on a tty, plain words in a pipe), the prose after it. Rows
+# also land in a record file so --json can emit the same findings as
+# one machine document.
+gutter() {
+	if colour_to 1; then
+		case "$1" in
+			ok) printf '\033[32m%-5s\033[0m' ok ;;
+			FAIL) printf '\033[31m%-5s\033[0m' FAIL ;;
+			skip) printf '\033[2m%-5s\033[0m' skip ;;
+			*) printf '%-5s' "$1" ;;
+		esac
+	else
+		printf '%-5s' "$1"
+	fi
 }
+emit() { # emit <ok|FAIL|note|skip> <section> <text> [fix] [painted-section]
+	case "$1" in
+		ok) ok_n=$((ok_n + 1)) ;;
+		FAIL) fail_n=$((fail_n + 1)) ;;
+		note) note_n=$((note_n + 1)) ;;
+		skip) skip_n=$((skip_n + 1)) ;;
+	esac
+	printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-}" \
+		| tr -d '\000-\010\013\014\016-\037' >>"$records"
+	[ "$json" -eq 1 ] && return 0
+	printf '%s %-10s %s\n' "$(gutter "$1")" "${5:-$2}" "$3"
+	[ -z "${4:-}" ] || printf '      %-10s fix:  %s\n' '' "$4"
+}
+row() { emit ok "$1" "$2"; }
+bad() { emit FAIL "$1" "$2" "$3"; }
 
 is_ours() {
 	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
@@ -65,7 +98,7 @@ for icon in appvm-wgq appvm-wgq-fw appvm-wgq-mgmt \
 	[ -f "$ICON_DIR/$icon.svg" ] && icons_present=$((icons_present + 1))
 done
 if [ "$icons_present" -eq "$icons_total" ]; then
-	row identity "icons $icons_present/$icons_total ok"
+	row identity "icons $icons_present/$icons_total"
 else
 	bad identity "icons $icons_present/$icons_total in $ICON_DIR" \
 		"sudo qubesctl --show-output state.apply wgq.wg-icons"
@@ -78,14 +111,14 @@ for pol in 30-wgq 30-wgq-labels 30-wgq-creation; do
 	[ -f "$POLICY_DIR/$pol.policy" ] && policies_present=$((policies_present + 1))
 done
 if [ "$policies_present" -eq "$policies_total" ]; then
-	row identity "policies $policies_present/$policies_total ok"
+	row identity "policies $policies_present/$policies_total"
 else
 	bad identity "policies $policies_present/$policies_total in $POLICY_DIR" \
 		"sudo airlock apply wgq"
 fi
 
 if [ -d "$SALT_DIR" ] && [ -e "$ENTRY" ]; then
-	row tree "$SALT_DIR present, $ENTRY wired ok"
+	row tree "$SALT_DIR present, $ENTRY wired"
 elif [ ! -d "$SALT_DIR" ]; then
 	bad tree "no reviewed tree at $SALT_DIR" \
 		"sudo airlock pull <qube> wgq <repo> && sudo airlock apply wgq"
@@ -94,9 +127,9 @@ else
 fi
 
 if command -v fzf >/dev/null 2>&1; then
-	row environment "fzf installed: pickers are fuzzy"
+	emit note environment "fzf installed: pickers are fuzzy"
 else
-	row environment "fzf not installed; pickers use the numbered menu (optional: sudo qubes-dom0-update fzf)"
+	emit note environment "fzf not installed; pickers use the numbered menu (optional: sudo qubes-dom0-update fzf)"
 fi
 
 # -- ownership: everything wearing our names is ours ------------------------
@@ -111,11 +144,11 @@ all_templates=$(qvm-ls --raw-data --fields name,template 2>/dev/null) || all_tem
 for qube in $(printf '%s\n' "$all_names" \
 	| grep -E '^(sys-wgq|sys-fw-|wgq-mgmt$)' || true); do
 	if is_ours "$qube"; then
-		row ownership "$qube tagged ok"
+		row ownership "$qube tagged"
 	else
 		# The same stance as zone list: a lookalike is surfaced, not
 		# seized and not failed -- it is simply not ours to judge.
-		row ownership "$qube wears a wgq name but was NOT created by wgq (ignored)"
+		emit note ownership "$qube wears a wgq name but was NOT created by wgq (ignored)"
 	fi
 done
 
@@ -129,7 +162,7 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 	vpn="sys-wgq-$zone"
 	[ "$zone" = wgq ] && vpn=sys-wgq
 	sect="zone $zone"
-	[ "$zone" = wgq ] && row "$sect" \
+	[ "$zone" = wgq ] && emit note "$sect" \
 		"the reserved zone is deprecated: sudo wgq zone rename wgq <name> (bare-name support ends in 0.4.0)"
 
 	if ! qvm-check --quiet "$vpn" 2>/dev/null; then
@@ -143,7 +176,7 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 		uplink=$(qvm-prefs "$vpn" netvm 2>/dev/null || :)
 		case "$uplink" in
 			sys-fw-*) row "$sect" "chain $fw -> $vpn -> $uplink (chained through zone ${uplink#sys-fw-})" ;;
-			*) row "$sect" "chain $fw -> $vpn -> ${uplink:-?} ok" ;;
+			*) row "$sect" "chain $fw -> $vpn -> ${uplink:-?}" ;;
 		esac
 	else
 		bad "$sect" "$fw routes to '${fw_netvm:-nothing}', not $vpn: clients bypass the tunnel path" \
@@ -152,7 +185,7 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 
 	clients=$(printf '%s\n' "$all_netvms" \
 		| awk -F'|' -v fw="$fw" '$2 == fw {print $1}' | tr '\n' ' ')
-	row "$sect" "clients: ${clients:-none}"
+	emit note "$sect" "clients: ${clients:-none}"
 
 	# Settings: features are the truth, the dataplane holds copies --
 	# an explicit truth contradicted by its copy is drift worth failing.
@@ -166,23 +199,23 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 		bad "$sect" "autoconnect is set on but the boot flag still seals the zone" \
 			"sudo wgq -z $zone connect"
 	elif [ "$d_flag" = 1 ]; then
-		row "$sect" "autoconnect off: boots sealed until an explicit connect"
+		emit note "$sect" "autoconnect off: boots sealed until an explicit connect"
 	fi
 
 	template=$(printf '%s\n' "$all_templates" \
 		| awk -F'|' -v v="$vpn" '$1 == v {print $2}')
 	if [ -n "$template" ] && [ "$template" != "$TEMPLATE" ]; then
-		row "$sect" "note: $vpn runs template '$template', expected $TEMPLATE"
+		emit note "$sect" "$vpn runs template '$template', expected $TEMPLATE"
 	fi
 
 	if ! qvm-check --quiet --running "$vpn" 2>/dev/null; then
-		row "$sect" "$vpn halted; dataplane checks skipped (start it and re-run)"
+		emit skip "$sect" "$vpn halted; dataplane checks skipped (start it and re-run)"
 		continue
 	fi
 
 	state=$(vpn_probe "$vpn" 'cat /run/wgq/state') && rc=0 || rc=$?
 	if [ "$rc" -eq 9 ]; then
-		row "$sect" "no qvm-run here; dataplane checks skipped"
+		emit skip "$sect" "no qvm-run here; dataplane checks skipped"
 		continue
 	fi
 	case "$state" in
@@ -208,7 +241,7 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 
 	if vpn_probe "$vpn" 'nft list chain ip qubes custom-forward' \
 		| grep -q 'oifname != "wg0"'; then
-		row "$sect" "kill switch installed ok"
+		row "$sect" "kill switch installed"
 	else
 		bad "$sect" "kill switch rules NOT in custom-forward" \
 			"qvm-run -u root $vpn 'systemctl restart qubes-firewall'"
@@ -217,7 +250,7 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 	accel=$(vpn_probe "$vpn" \
 		'nft list table inet qubes-nat-accel >/dev/null 2>&1 && echo present || echo absent' || :)
 	case "$accel" in
-		absent) row "$sect" "accel fast path absent ok" ;;
+		absent) row "$sect" "accel fast path absent" ;;
 		present)
 			bad "$sect" "the qubes-nat-accel fast path EXISTS: offloaded flows would bypass the kill switch" \
 				"qvm-run -u root $vpn 'systemctl restart qubes-firewall'"
@@ -229,7 +262,7 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 	esac
 
 	if vpn_probe "$vpn" 'test -x /rw/config/network-hooks.d/90-wgq-no-accel'; then
-		row "$sect" "no-accel hook present ok"
+		row "$sect" "no-accel hook present"
 	else
 		bad "$sect" "no-accel hook missing: the fast path returns on the next vif event" \
 			"qvm-run -u root $vpn 'systemctl restart qubes-firewall'"
@@ -241,24 +274,41 @@ for fw in $(printf '%s\n' "$all_names" | grep '^sys-fw-' || true); do
 	# never as drift -- convicting on an error is the dig bug's shape.
 	d_file=$(vpn_probe "$vpn" 'cat /rw/config/wg/dns 2>/dev/null || echo __none__' || :)
 	if [ -z "$d_file" ]; then
-		row "$sect" "could not check the resolver copy ($vpn gave no answer); re-run doctor"
+		emit skip "$sect" "could not check the resolver copy ($vpn gave no answer); re-run doctor"
 	else
 		[ "$d_file" = __none__ ] && d_file=''
 		if [ "${d_dns:-}" != "${d_file:-}" ]; then
 			bad "$sect" "stored resolver ('${d_dns:-provider}') and dataplane copy ('${d_file:-provider}') differ" \
 				"sudo wgq -z $zone connect   (re-materializes the settings)"
 		elif [ -n "$d_dns" ]; then
-			row "$sect" "resolver override $d_dns materialized ok"
+			row "$sect" "resolver override $d_dns materialized"
 		fi
 	fi
 done
-[ "$zones" -gt 0 ] || row zones "none exist; create one with: sudo wgq zone add <zone>"
+[ "$zones" -gt 0 ] || emit note zones "none exist; create one with: sudo wgq zone add <zone>"
 
 # -- verdict ----------------------------------------------------------------
 
+if [ "$json" -eq 1 ]; then
+	python3 -c '
+import json, sys
+rows = []
+for line in open(sys.argv[1]):
+    parts = line.rstrip("\n").split("\t")
+    status, section, text, fix = (parts + ["", "", "", ""])[:4]
+    row = {"status": status, "section": section, "text": text}
+    if fix:
+        row["fix"] = fix
+    rows.append(row)
+json.dump({"findings": rows, "broken": sum(r["status"] == "FAIL" for r in rows)}, sys.stdout, indent=2)
+print()
+' "$records"
+	[ "$fail_n" -eq 0 ] && exit 0
+	exit 1
+fi
 printf '\n'
-if [ "$failed" -eq 0 ]; then
-	ok "doctor: nothing broken"
+if [ "$fail_n" -eq 0 ]; then
+	ok "doctor: nothing broken ($ok_n ok · $note_n notes · $skip_n skipped)"
 	exit 0
 fi
-die "doctor: $failed broken invariant(s); each has its fix above"
+die "doctor: $fail_n broken invariant(s); each has its fix above ($ok_n ok · $note_n notes · $skip_n skipped)"
