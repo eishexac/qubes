@@ -133,6 +133,7 @@ Full syntax and output previews: [docs/cli.md](docs/cli.md).
 | [docs/install.md](docs/install.md) | the verified install, step by step, and uninstall |
 | [docs/lifecycle.md](docs/lifecycle.md) | provisioning, zones, connect/disconnect, settings, panic |
 | [docs/verify.md](docs/verify.md) | proving the zone leak-tight: verify, doctor, the manual script |
+| [docs/validation.md](docs/validation.md) | the hardware run sheet: nine checkpoints, what to record, how to report |
 | [DESIGN.md](DESIGN.md) | why the design is what it is, with sources |
 | [CHANGELOG.md](CHANGELOG.md) | what changed, for the operator |
 
