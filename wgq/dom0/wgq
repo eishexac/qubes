@@ -50,7 +50,8 @@ case "$SELF" in */*) wgq_here=${SELF%/*} ;; *) wgq_here=. ;; esac
 MGMT=${WGQ_MGMT:-wgq-mgmt}
 
 usage() {
-	printf 'usage: %s <command> [zone] ...      (no zone named? a picker asks -- never a guess)\n' "$PROG" >&2
+	printf 'usage: %s                           (bare: the health view -- every zone, routes)\n' "$PROG" >&2
+	printf '       %s <command> [zone] ...      (no zone named? a picker asks -- never a guess)\n' "$PROG" >&2
 	printf '       %s zone <verb> ...           (dom0: add attach detach list remove)\n' "$PROG" >&2
 	printf '       %s panic [-z <zone>]         (EMERGENCY: kill + block every zone, or one)\n' "$PROG" >&2
 	printf '       %s verify [zone] [--kill-rounds N]  (prove the zone leak-tight)\n' "$PROG" >&2
@@ -281,7 +282,14 @@ while [ $# -gt 0 ]; do
 		*) break ;;
 	esac
 done
-[ $# -ge 1 ] || usage
+# Bare `wgq` answers "is everything okay", the git-status principle:
+# the health view is the home screen, usage lives under -h. The tree
+# IS the health view, so no second renderer exists to drift from it.
+if [ $# -eq 0 ]; then
+	WGQ_PROG="$PROG tree" WGQ_HOME_HINT=1 export WGQ_PROG WGQ_HOME_HINT
+	exec "$wgq_here/wgq-tree"
+fi
+case "$1" in -h | --help | help) usage ;; esac
 verb=$1
 
 case "$verb" in

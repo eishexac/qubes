@@ -295,6 +295,24 @@ else
 	fail "the down alias broke"
 fi
 
+# Bare wgq is the health view, not usage; -h is usage.
+if wgq >"$WORK/out" 2>&1 \
+	&& grep -q 'routes: ' "$WORK/out" \
+	&& grep -q 'commands: wgq -h' "$WORK/out"; then
+	ok "bare wgq shows the health view and points at -h"
+else
+	cat "$WORK/out"
+	fail "bare wgq went wrong"
+fi
+if wgq -h >"$WORK/out" 2>&1; then
+	fail "-h exited 0"
+elif grep -q 'bare: the health view' "$WORK/out"; then
+	ok "-h is usage, and usage names the bare form"
+else
+	cat "$WORK/out"
+	fail "-h went wrong"
+fi
+
 if [ "$failures" -gt 0 ]; then
 	printf '%s failure(s)\n' "$failures"
 	exit 1

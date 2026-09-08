@@ -163,3 +163,6 @@ via() {
 }
 printf 'routes: dom0-updates %s | template-updates %s | clock %s | new-qubes %s\n' \
 	"$(via "$r_upd")" "$(via "$r_tpl")" "$(via "$r_clock")" "$(via "$r_net")"
+
+# When we are the home screen (bare `wgq`), say where the rest lives.
+[ "${WGQ_HOME_HINT:-0}" = 1 ] && note "commands: wgq -h" || :
