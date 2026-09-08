@@ -295,6 +295,44 @@ else
 	fail "the down alias broke"
 fi
 
+# Bare wgq is the health view, not usage; -h is usage.
+if wgq >"$WORK/out" 2>&1 \
+	&& grep -q 'routes: ' "$WORK/out" \
+	&& grep -q 'commands: wgq -h' "$WORK/out"; then
+	ok "bare wgq shows the health view and points at -h"
+else
+	cat "$WORK/out"
+	fail "bare wgq went wrong"
+fi
+if wgq -h >"$WORK/out" 2>&1; then
+	fail "-h exited 0"
+elif grep -q 'bare: the health view' "$WORK/out"; then
+	ok "-h is usage, and usage names the bare form"
+else
+	cat "$WORK/out"
+	fail "-h went wrong"
+fi
+
+# -n prints the framed command and runs nothing.
+if wgq switch work nl1 -n >"$WORK/out" 2>&1 \
+	&& grep -q 'dry-run: nothing executed' "$WORK/out" \
+	&& [ ! -s "$QLOG" ]; then
+	ok "-n prints the framed command and executes nothing"
+else
+	cat "$WORK/out" "$QLOG" 2>/dev/null
+	fail "-n dry-run went wrong"
+fi
+
+# -n on a dom0-native verb is refused with the reason, not faked.
+if wgq restart -n >"$WORK/out" 2>&1; then
+	fail "-n on restart pretended"
+elif grep -q "prints its plan before asking" "$WORK/out"; then
+	ok "-n on a plan-first verb is refused honestly"
+else
+	cat "$WORK/out"
+	fail "-n refusal went wrong"
+fi
+
 if [ "$failures" -gt 0 ]; then
 	printf '%s failure(s)\n' "$failures"
 	exit 1

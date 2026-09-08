@@ -50,7 +50,8 @@ case "$SELF" in */*) wgq_here=${SELF%/*} ;; *) wgq_here=. ;; esac
 MGMT=${WGQ_MGMT:-wgq-mgmt}
 
 usage() {
-	printf 'usage: %s <command> [zone] ...      (no zone named? a picker asks -- never a guess)\n' "$PROG" >&2
+	printf 'usage: %s                           (bare: the health view -- every zone, routes)\n' "$PROG" >&2
+	printf '       %s <command> [zone] ...      (no zone named? a picker asks -- never a guess)\n' "$PROG" >&2
 	printf '       %s zone <verb> ...           (dom0: add attach detach list remove)\n' "$PROG" >&2
 	printf '       %s panic [-z <zone>]         (EMERGENCY: kill + block every zone, or one)\n' "$PROG" >&2
 	printf '       %s verify [zone] [--kill-rounds N]  (prove the zone leak-tight)\n' "$PROG" >&2
@@ -68,6 +69,7 @@ usage() {
 	printf '       %s keygen|pubkey|status [zone] | apply|switch [zone] <arg>\n' "$PROG" >&2
 	printf '       %s <mgmt verb> ...           (servers provision peer firewall ...)\n' "$PROG" >&2
 	printf '       -z <zone> is accepted anywhere and always means the same thing\n' >&2
+	printf '       -n (--dry-run) prints the framed qvm-run and executes nothing\n' >&2
 	exit 2
 }
 
@@ -240,6 +242,10 @@ run_in() {
 		r_cmd="$r_cmd $(quote "$r_arg")"
 	done
 	trace "-> qvm-run -u $r_user $r_qube $r_cmd"
+	if [ "$DRY" -eq 1 ]; then
+		note "dry-run: nothing executed"
+		exit 0
+	fi
 	exec qvm-run --no-gui --pass-io -u "$r_user" -- "$r_qube" "$r_cmd"
 }
 
@@ -252,6 +258,7 @@ PANIC_ONE=0
 # belongs to that verb's own CLI inside the qube (provision --zone ...
 # passes through untouched); a LEADING --zone still addresses the
 # dispatcher, as it always has.
+DRY=0
 pending_zone=0
 rebuilt=0
 for arg; do
@@ -265,6 +272,7 @@ for arg; do
 	fi
 	case "$arg" in
 		-z) pending_zone=1 ;;
+		-n | --dry-run) DRY=1 ;;
 		*) set -- "$@" "$arg" ;;
 	esac
 done
@@ -281,8 +289,24 @@ while [ $# -gt 0 ]; do
 		*) break ;;
 	esac
 done
-[ $# -ge 1 ] || usage
+# Bare `wgq` answers "is everything okay", the git-status principle:
+# the health view is the home screen, usage lives under -h. The tree
+# IS the health view, so no second renderer exists to drift from it.
+if [ $# -eq 0 ]; then
+	WGQ_PROG="$PROG tree" WGQ_HOME_HINT=1 export WGQ_PROG WGQ_HOME_HINT
+	exec "$wgq_here/wgq-tree"
+fi
+case "$1" in -h | --help | help) usage ;; esac
 verb=$1
+
+if [ "$DRY" -eq 1 ]; then
+	case "$verb" in
+		keygen | apply | switch | pubkey | status | sync | credential) ;;
+		zone | connect | disconnect | up | down | set | get | verify | doctor | tree | top | logs | route | restart | panic | uninstall)
+			die "-n covers the qvm-run-framed verbs (they print exactly what would run); '$verb' is dom0-native and prints its plan before asking"
+			;;
+	esac
+fi
 
 case "$verb" in
 	panic)
@@ -416,6 +440,11 @@ case "$verb" in
 		case "$provider" in
 			'' | *[!a-z0-9-]*) die "unusable provider name '$provider'" ;;
 		esac
+		if [ "$DRY" -eq 1 ]; then
+			trace "-> (read hidden) | qvm-run -u root $MGMT 'umask 077 && cat > /rw/config/$provider-account && chown user:user ...'"
+			note "dry-run: nothing read, nothing executed"
+			exit 0
+		fi
 		printf '%s account id (input hidden): ' "$provider"
 		stty -echo 2>/dev/null || true
 		acct=""
@@ -450,6 +479,10 @@ case "$verb" in
 		s_vpn=$(vpn_name "$zone")
 		trace "-> qvm-run -u user $MGMT 'tar -C ~/.local/share/wgq/zones/$zone -cf - peers'"
 		trace "   | qvm-run -u root $s_vpn 'tar -xf - && wgq apply peers'"
+		if [ "$DRY" -eq 1 ]; then
+			note "dry-run: nothing executed"
+			exit 0
+		fi
 		qvm-run --no-gui --pass-io -u user -- "$MGMT" \
 			"tar -C /home/user/.local/share/wgq/zones/$zone -cf - peers" \
 			| qvm-run --no-gui --pass-io -u root -- "$s_vpn" \
