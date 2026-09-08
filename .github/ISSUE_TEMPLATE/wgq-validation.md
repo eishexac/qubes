@@ -27,6 +27,9 @@ labels: ["wgq", "validation"]
 
 <!-- "V5: pass" lines; for any failure, the raw output below -->
 
+<!-- Redact the `clearnet` line from verify output: that address is
+     YOURS. Everything else verify prints is the provider's. -->
+
 ## Raw output for failures (untidied)
 
 ```console

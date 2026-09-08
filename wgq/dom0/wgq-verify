@@ -197,6 +197,8 @@ fi
 
 note "zone $zone: client $client, endpoint $endpoint, resolver $resolver"
 note "clearnet: ${clearnet:-unknown (check 1 will be skipped; pass --clearnet-ip)}"
+[ -n "$clearnet" ] \
+	&& note "(the clearnet address is YOURS -- redact it before sharing this output; every other address here is the provider's)"
 
 trace "-> pushing probes into $client (stdlib python, nothing to install)"
 qvm-run --no-gui --pass-io -- "$client" 'cat > /tmp/wgq-probes.py' <"$PROBES"

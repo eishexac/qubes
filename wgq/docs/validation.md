@@ -93,7 +93,9 @@ sudo wgq verify work --kill-rounds 3
 the tunnel exit), 2 (DNS pinned; arbitrary resolvers intercepted),
 3 (kill test, three rounds, recovery proven each time), 4 (SKIP).
 **This is the report that matters most — paste it whole, pass or
-fail.**
+fail, after one redaction: the `clearnet` address is *your* ISP
+address (verify says so in its own output). Every other address in the
+run is the provider's.**
 
 ## V6 — panic's deny-all *(new: it works for the first time)*
 

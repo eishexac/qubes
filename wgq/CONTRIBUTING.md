@@ -40,8 +40,11 @@ Every issue needs three things; the templates ask for them:
 Two hard rules: a **leak** — traffic reaching the clear when the
 design says it must not — goes through private vulnerability
 reporting ([SECURITY.md](SECURITY.md)), never a public issue; and
-never paste an account number or a private key (wgq prints neither,
-but a hand-run `wg show` might).
+never paste an account number, a private key, or the `clearnet`
+address `verify` prints — that one is *your* ISP address, and the
+output says so beside it (everything else it prints belongs to the
+provider). wgq prints no keys or account numbers itself, but a
+hand-run `wg show` might.
 
 ## Running the checks
 
