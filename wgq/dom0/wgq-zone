@@ -30,7 +30,7 @@ set -eu
 PROG=${WGQ_PROG:-${0##*/}}
 
 usage() {
-	printf 'usage: %s add <zone> [--color <c>] [--upstream <netvm>] [--attach <qube>,...]\n' "$PROG" >&2
+	printf 'usage: %s add <zone> [-v] [--color <c>] [--upstream <netvm>] [--attach <qube>,...]\n' "$PROG" >&2
 	printf '       %s attach <zone> <qube>\n' "$PROG" >&2
 	printf '       %s detach <qube> [netvm]\n' "$PROG" >&2
 	printf '       %s list\n' "$PROG" >&2
@@ -171,8 +171,13 @@ cmd_add() {
 	upstream=""
 	attach_list=""
 	colour=""
+	verbose=0
 	while [ $# -gt 0 ]; do
 		case "$1" in
+			-v)
+				verbose=1
+				shift
+				;;
 			--color | --colour)
 				[ $# -ge 2 ] || usage
 				colour=$2
@@ -225,8 +230,25 @@ cmd_add() {
 		qvm-check --quiet "$upstream" 2>/dev/null || die "no such upstream netvm '$upstream'"
 		pillar="{\"wgq\": {\"zone\": \"$z\", \"upstream\": \"$upstream\"}}"
 	fi
-	note "creating $(vpn_name "$z") + sys-fw-$z via salt (can take a minute; report follows)..."
-	qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
+	# The salt report is a wall; the default is its verdict, one line
+	# per outcome, with the wall on failure or on -v -- because a wall
+	# nobody reads teaches people to stop reading reports at all.
+	note "creating $(vpn_name "$z") + sys-fw-$z via salt (can take a minute)..."
+	if [ "$verbose" -eq 1 ]; then
+		qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar"
+	else
+		a_log=$(mktemp)
+		if qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar" >"$a_log" 2>&1 \
+			&& ! grep -qE '^Failed:[[:space:]]+[1-9]' "$a_log"; then
+			grep -E '^(Succeeded|Failed):' "$a_log" | sed 's/^/    /' || :
+			note "(the full salt report: re-run with -v)"
+			rm -f "$a_log"
+		else
+			cat "$a_log"
+			rm -f "$a_log"
+			die "salt converge failed; the full report is above"
+		fi
+	fi
 	if [ -n "$colour" ]; then
 		qvm-features "$(vpn_name "$z")" wgq.color "$colour" \
 			|| warn "could not store the colour; re-run: $PROG add $z --color $colour"
