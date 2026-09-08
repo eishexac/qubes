@@ -119,6 +119,12 @@ EOF
 cat >"$WORK/bin/qubesctl" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >> "${QCTL_LOG:?}"
+if [ -f "${SALT_FAIL:-/nonexistent}" ]; then
+	printf 'ID: broken-state\nResult: False\n'
+	printf 'Failed:    1\n'
+	exit 1
+fi
+printf 'Succeeded: 13 (changed=4)\nFailed:    0\n'
 zone=$(printf '%s' "$*" | sed -n 's/.*"zone": "\([a-z0-9-]*\)".*/\1/p')
 if [ -n "$zone" ]; then
 	vpn="sys-wgq-$zone"
@@ -457,6 +463,39 @@ else
 	cat "$WORK/out"
 	fail "doctor mis-judged a healthy machine"
 fi
+
+# 11a1c. The salt wall is a verdict by default, the wall on -v or on
+# failure.
+if zone add zq >"$WORK/out" 2>&1 \
+	&& grep -q 'Succeeded: 13' "$WORK/out" \
+	&& grep -q 're-run with -v' "$WORK/out" \
+	&& ! grep -q 'pillar=' "$WORK/out"; then
+	ok "zone add prints the salt verdict, not the wall"
+else
+	cat "$WORK/out"
+	fail "salt summary went wrong"
+fi
+if zone add zv -v >"$WORK/out" 2>&1 \
+	&& grep -q 'Succeeded: 13' "$WORK/out" \
+	&& ! grep -q 're-run with -v' "$WORK/out"; then
+	ok "-v restores the full salt report"
+else
+	cat "$WORK/out"
+	fail "-v passthrough went wrong"
+fi
+touch "$WORK/salt-fail"
+if SALT_FAIL="$WORK/salt-fail" zone add zf >"$WORK/out" 2>&1; then
+	fail "a failed converge exited 0"
+elif grep -q 'salt converge failed' "$WORK/out" && grep -q 'broken-state' "$WORK/out"; then
+	ok "a failed converge dumps the full report and dies"
+else
+	cat "$WORK/out"
+	fail "failure path went wrong"
+fi
+rm -f "$WORK/salt-fail"
+for zz in zq zv; do
+	printf '%s\n' "$zz" | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove "$zz" >/dev/null 2>&1 || :
+done
 
 # 11a2b. doctor --json: the same findings as one machine document,
 # nothing human on stdout.
