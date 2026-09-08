@@ -90,12 +90,15 @@ sudo wgq verify work --kill-rounds 3
 ```
 
 **Expect** check 1 (exit ≠ clearnet), 1b (STUN: the UDP exit equals
-the tunnel exit), 2 (DNS pinned; arbitrary resolvers intercepted),
-3 (kill test, three rounds, recovery proven each time), 4 (SKIP).
-**This is the report that matters most — paste it whole, pass or
-fail, after one redaction: the `clearnet` address is *your* ISP
-address (verify says so in its own output). Every other address in the
-run is the provider's.**
+the tunnel exit), 1c (origin: your exit's network differs from your
+clearnet's — an *advisory*, never a pass/fail), 2 (DNS pinned;
+arbitrary resolvers intercepted), 3 (kill test, three rounds, recovery
+proven each time), 4 (SKIP). **Paste it whole, pass or fail, after one
+redaction: the `clearnet` address is *your* ISP address (verify says
+so in its own output). Every other address in the run is the
+provider's.** If 1c fires the same-network advisory, that is worth
+knowing — it means the tunnel is sealed but the exit barely moves your
+apparent origin; note it, it does not fail the run.
 
 ## V6 — panic's deny-all *(new: it works for the first time)*
 

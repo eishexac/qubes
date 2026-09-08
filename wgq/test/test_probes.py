@@ -93,6 +93,35 @@ class TestParseAnswers(unittest.TestCase):
             probes.parse_answers(b"\x00\x01", TID)  # short
 
 
+class TestAsn(unittest.TestCase):
+    TID = 0x5748
+
+    def txt_response(self, text, tid=None, rtype=16):
+        # question: 1.1.1.8.origin.asn.cymru.com TXT
+        name = "8.8.1.1.origin.asn.cymru.com"
+        q = b"".join(bytes([len(l)]) + l.encode() for l in name.split(".")) \
+            + b"\x00" + struct.pack(">HH", 16, 1)
+        rd = bytes([len(text)]) + text.encode()
+        ans = b"\xc0\x0c" + struct.pack(">HHIH", rtype, 1, 60, len(rd)) + rd
+        return struct.pack(">HHHHHH", tid or self.TID, 0x8180, 1, 1, 0, 0) + q + ans
+
+    def test_extracts_the_asn(self):
+        data = self.txt_response("15169 | 8.8.0.0/16 | US | arin | 2000")
+        self.assertEqual(probes.parse_txt(data, self.TID), "15169 | 8.8.0.0/16 | US | arin | 2000")
+
+    def test_build_query_carries_the_qtype(self):
+        q = probes.build_query("x.origin.asn.cymru.com", self.TID, qtype=16)
+        self.assertTrue(q.endswith(b"\x00" + struct.pack(">HH", 16, 1)))
+
+    def test_rejects_wrong_transaction(self):
+        with self.assertRaises(ValueError):
+            probes.parse_txt(self.txt_response("15169", tid=0x1111), self.TID)
+
+    def test_rejects_a_non_txt_answer(self):
+        with self.assertRaises(ValueError):
+            probes.parse_txt(self.txt_response("15169", rtype=1), self.TID)
+
+
 class TestParseStun(unittest.TestCase):
     TXID = b"\x01" * 12
 

@@ -183,6 +183,13 @@ positional. See docs/lifecycle.md as sections land.
   and checked for drift by doctor. New zones inherit globals at birth.
   An explicit zone value beats the global even when they agree, and
   `set <key> default` clears a layer.
+- `wgq verify` gains an origin advisory (check 1c): it compares the
+  exit's autonomous system against your clearnet's and flags a match —
+  a sealed tunnel to a same-ISP exit barely moves your apparent origin,
+  a real traffic-correlation weakness in the *choice* of server. It is
+  an ADVISORY, loud but never part of the leak-tight pass/fail verdict
+  (the seal is fine; the choice is the issue). AS numbers come from
+  Team Cymru's DNS interface via the stdlib probe.
 - A STUN probe joins `wgq verify` (check 1b): the public address a STUN
   server sees over UDP must match the tunnel exit -- the WebRTC leak
   question answered at the layer this tool controls.
