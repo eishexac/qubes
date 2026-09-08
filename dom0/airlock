@@ -71,6 +71,10 @@ PAGER="${PAGER:-less}"
 # so capping the stream fails closed.
 MAX_BYTES=104857600
 PROG=${0##*/}
+# airlock's own version, independent of any project's wgq-v* tag on
+# purpose: this tool installs every project, so it versions itself.
+# Bump when the tool changes; report it with `airlock version`.
+AIRLOCK_VERSION=1.0
 # Overridable only so the apply flow can be tested outside dom0.
 QUBESCTL="${AIRLOCK_QUBESCTL:-qubesctl}"
 POLICY_DIR="${AIRLOCK_POLICY_DIR:-/etc/qubes/policy.d}"
@@ -115,6 +119,7 @@ usage() {
 	printf 'usage: %s pull <qube> <project> [path-in-qube]\n' "$PROG" >&2
 	printf '       %s apply <project>\n' "$PROG" >&2
 	printf '       %s status\n' "$PROG" >&2
+	printf '       %s version\n' "$PROG" >&2
 	exit 2
 }
 
@@ -535,5 +540,8 @@ case "${1:-}" in
 		cmd_apply "$@"
 		;;
 	status) cmd_status ;;
+	version | --version | -V)
+		printf 'airlock %s\n' "$AIRLOCK_VERSION"
+		;;
 	*) usage ;;
 esac
