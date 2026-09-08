@@ -30,7 +30,7 @@ set -eu
 PROG=${WGQ_PROG:-${0##*/}}
 
 usage() {
-	printf 'usage: %s add <zone> [-v] [--color <c>] [--upstream <netvm>] [--attach <qube>,...]\n' "$PROG" >&2
+	printf 'usage: %s add <zone> [-v|--verbose] [--color <c>] [--upstream <netvm>] [--attach <qube>,...]\n' "$PROG" >&2
 	printf '       %s attach <zone> <qube>\n' "$PROG" >&2
 	printf '       %s detach <qube> [netvm]\n' "$PROG" >&2
 	printf '       %s list\n' "$PROG" >&2
@@ -174,7 +174,7 @@ cmd_add() {
 	verbose=0
 	while [ $# -gt 0 ]; do
 		case "$1" in
-			-v)
+			-v | --verbose)
 				verbose=1
 				shift
 				;;
@@ -241,7 +241,7 @@ cmd_add() {
 		if qubesctl --show-output state.apply wgq.wg-zone pillar="$pillar" >"$a_log" 2>&1 \
 			&& ! grep -qE '^Failed:[[:space:]]+[1-9]' "$a_log"; then
 			grep -E '^(Succeeded|Failed):' "$a_log" | sed 's/^/    /' || :
-			note "(the full salt report: re-run with -v)"
+			note "(the full salt report: re-run with -v / --verbose)"
 			rm -f "$a_log"
 		else
 			cat "$a_log"

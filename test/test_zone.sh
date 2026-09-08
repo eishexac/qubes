@@ -477,8 +477,11 @@ else
 fi
 if zone add zv -v >"$WORK/out" 2>&1 \
 	&& grep -q 'Succeeded: 13' "$WORK/out" \
-	&& ! grep -q 're-run with -v' "$WORK/out"; then
-	ok "-v restores the full salt report"
+	&& ! grep -q 're-run with' "$WORK/out" \
+	&& printf 'zvl\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" add zvl --verbose >"$WORK/out2" 2>&1 \
+	&& grep -q 'Succeeded: 13' "$WORK/out2"; then
+	ok "-v and --verbose both restore the full salt report"
+	printf 'zvl\n' | env PATH="$WORK/bin:$PATH" sh "$ZONE" remove zvl >/dev/null 2>&1 || :
 else
 	cat "$WORK/out"
 	fail "-v passthrough went wrong"

@@ -2,7 +2,7 @@
 
 Every dom0 command is `sudo wgq …` (sudo is structural: the entrypoint
 is a symlink into root-only `/srv/salt`, so the file that runs is
-always the one the airlock approved). Five grammar rules cover
+always the one the airlock approved). Six grammar rules cover
 everything:
 
 1. **The zone is the first argument** of every zone verb:
@@ -19,7 +19,11 @@ everything:
 4. **Listing verbs speak `--json`** (`servers`, `peer list`, `status`,
    `zone list`): one parseable document on stdout, human notes on
    stderr.
-5. **Refusals name their fix.** An error that doesn't tell you the
+5. **Version and verbose read conventionally.** `--version`/`-V` print
+   the version; `--verbose`/`-v` widen output on the verbs that have a
+   wall to hide (`zone add`) — `-v` is verbose, as everywhere in Unix,
+   so version is `-V`.
+6. **Refusals name their fix.** An error that doesn't tell you the
    next command is a bug; report it.
 
 Zone names are painted in their zone's colour on a terminal; pipes and
