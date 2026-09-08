@@ -191,9 +191,15 @@ zone `wgq` (bare `sys-wgq` + `sys-fw-wgq`) keeps working while
 deprecated: migrate it with `zone rename wgq <name>`; reading the bare
 name ends in 0.4.0.
 
-`sudo wgq top <zone>` watches one tunnel live — handshake age,
-transfer rates, and the kill-switch drop counter ticking up the moment
-anything tries to leave outside the tunnel (`--once` for scripts).
+`sudo wgq top` takes the screen — every running zone at once:
+handshake age, transfer rates with sparklines, per-client traffic, and
+the kill-switch drop counter ticking the moment anything tries to
+leave outside the tunnel. `top <zone>` filters to one; `--once`
+snapshots for scripts.
+
+`sudo wgq logs <zone>` tails the zone's journal — the firewall script,
+the tunnel unit and the qubes-firewall daemon, merged and labeled by
+journald; `-f` follows live, `-n`/`--since` scope it.
 
 `sudo wgq tree` draws the whole topology on one screen: every zone as
 a painted chain with its live tunnel state, clients, and the system
