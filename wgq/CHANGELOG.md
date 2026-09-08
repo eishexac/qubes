@@ -71,8 +71,11 @@ positional. See docs/lifecycle.md as sections land.
   identity is asked out — raw output, a checkpoint or command per
   finding), and the repository gains matching issue templates.
 - `wgq --version` (`-V`) in dom0, answered from the reviewed tree —
-  the same string the in-qube CLI prints, no qube started to ask.
-  (`-v` stays verbose, on the verbs that have a wall to hide.)
+  the same string the in-qube CLI prints, no qube started to ask. The
+  four flags now read conventionally: `--version`/`-V` for version,
+  `--verbose`/`-v` for verbose (the latter on the salt-running verbs
+  that have a wall to hide) — `-v` is verbose as every sysadmin's
+  muscle memory expects, so version takes `-V`.
 - Bash completion for the dom0 entrypoint: verbs, live zone names, and
   the sub-verbs of `zone`/`route`/`set`; installed by the CLI state,
   removed by uninstall.
