@@ -68,6 +68,7 @@ $(DIST): $(SOURCES) $(MKZIPAPP)
 check:
 	$(PYTHON) -m compileall -q src
 	@$(PYTHON) -m py_compile dom0/verify-probes.py && printf 'probes compile ok\n'
+	@bash -n dom0/wgq-completion.bash && printf 'completion parses ok\n'
 	@for i in dom0/icons/*.svg; do \
 		head -c 100 "$$i" | grep -q '<svg' || { printf '%s buries its <svg> tag past byte 100 -- GTK format sniffing (gdk-pixbuf) will not recognize it and icons go blank in GTK apps\n' "$$i"; exit 1; }; \
 	done; printf 'icons sniffable ok\n'

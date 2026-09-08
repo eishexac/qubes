@@ -23,3 +23,13 @@ wgq-cli-entrypoint:
     - name: /usr/local/bin/wgq
     - target: /srv/salt/wgq/dom0/wgq
     - force: True
+
+# Tab completion for the entrypoint: verbs and live zone names, no
+# sudo, no prompts. Bash-specific by nature; harmless where unused.
+wgq-cli-completion:
+  file.managed:
+    - name: /usr/share/bash-completion/completions/wgq
+    - source: salt://wgq/dom0/wgq-completion.bash
+    - user: root
+    - group: root
+    - mode: '0644'

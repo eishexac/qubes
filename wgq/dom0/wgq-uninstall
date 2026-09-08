@@ -114,6 +114,11 @@ if qvm-check --quiet "$TPL" 2>/dev/null; then
 	fi
 fi
 
+if [ -f /usr/share/bash-completion/completions/wgq ]; then
+	if step "remove the bash completion /usr/share/bash-completion/completions/wgq"; then
+		rm -f /usr/share/bash-completion/completions/wgq
+	fi
+fi
 if [ -L /usr/local/bin/wgq ]; then
 	if step "remove the dom0 entrypoint /usr/local/bin/wgq"; then
 		rm -f /usr/local/bin/wgq

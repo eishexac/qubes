@@ -57,6 +57,16 @@ positional. See docs/lifecycle.md as sections land.
   tool, shows the diff and offers to install it before anything else —
   one accepted yes re-runs the pull with the new tool. The
   unknown-verb refusal points there.
+- Bare `wgq` is the health view — the tree itself, with a
+  `commands: wgq -h` hint — because the naked command should answer
+  "is everything okay"; usage moved to `-h`.
+- `-n` (`--dry-run`), accepted anywhere: the qvm-run-framed verbs print
+  exactly what would run and execute nothing (`credential` reads no
+  secret under it); the dom0-native verbs that already print a plan
+  before asking say so instead of faking a second dry layer.
+- Bash completion for the dom0 entrypoint: verbs, live zone names, and
+  the sub-verbs of `zone`/`route`/`set`; installed by the CLI state,
+  removed by uninstall.
 
 ### Security
 
