@@ -101,6 +101,10 @@ six `*-wgq*.svg` files.
 
 ---
 
+`airlock version` (also `--version`/`-V`) prints the tool's own
+version — independent of any project's tag, because one airlock
+installs them all.
+
 ## Updating the airlock itself
 
 The airlock updates itself where updates arrive: every `pull` fetches

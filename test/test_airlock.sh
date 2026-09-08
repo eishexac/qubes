@@ -433,6 +433,17 @@ else
 fi
 chmod -x "$AIRLOCK_SALT_ROOT/demo/readme.txt"
 
+# airlock reports its own version, three spellings, all equal.
+v1=$("$INGEST" version 2>&1)
+v2=$("$INGEST" --version 2>&1)
+v3=$("$INGEST" -V 2>&1)
+if [ "$v1" = "$v2" ] && [ "$v2" = "$v3" ] && printf '%s' "$v1" | grep -q '^airlock [0-9]'; then
+	ok "airlock version: version/--version/-V agree ($v1)"
+else
+	printf '%s / %s / %s\n' "$v1" "$v2" "$v3"
+	fail "airlock version went wrong"
+fi
+
 if [ "$failures" -gt 0 ]; then
 	printf '%s failure(s)\n' "$failures"
 	exit 1
