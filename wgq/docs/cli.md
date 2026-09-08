@@ -14,8 +14,10 @@ everything:
    installed in dom0 (`sudo qubes-dom0-update fzf` — Fedora's own
    repo, no new trust anchor) it upgrades to fuzzy typing.
 3. **`-z <zone>` works anywhere** on the line and means the same thing
-   in every position. `--zone` *after* a management verb belongs to
-   that verb's own CLI inside the qube.
+   in every position; `-n`/`--dry-run` is collected the same way — on a
+   qvm-run-framed verb it prints the exact command and runs nothing.
+   `--zone` *after* a management verb belongs to that verb's own CLI
+   inside the qube.
 4. **Listing verbs speak `--json`** (`servers`, `peer list`, `status`,
    `zone list`): one parseable document on stdout, human notes on
    stderr.
