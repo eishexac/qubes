@@ -333,6 +333,16 @@ else
 	fail "-n refusal went wrong"
 fi
 
+# --version answers from the tree, matching the in-qube CLI's string.
+want=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$(dirname "$WGQ")/../src/wgq/__init__.py")
+if wgq --version >"$WORK/out" 2>&1 \
+	&& grep -qx "wgq $want" "$WORK/out"; then
+	ok "--version prints the tree's own version"
+else
+	cat "$WORK/out"
+	fail "--version went wrong (wanted 'wgq $want')"
+fi
+
 if [ "$failures" -gt 0 ]; then
 	printf '%s failure(s)\n' "$failures"
 	exit 1

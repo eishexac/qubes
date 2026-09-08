@@ -70,6 +70,9 @@ positional. See docs/lifecycle.md as sections land.
   gains issue requirements (software environment only — hardware
   identity is asked out — raw output, a checkpoint or command per
   finding), and the repository gains matching issue templates.
+- `wgq --version` (`-V`) in dom0, answered from the reviewed tree —
+  the same string the in-qube CLI prints, no qube started to ask.
+  (`-v` stays verbose, on the verbs that have a wall to hide.)
 - Bash completion for the dom0 entrypoint: verbs, live zone names, and
   the sub-verbs of `zone`/`route`/`set`; installed by the CLI state,
   removed by uninstall.
