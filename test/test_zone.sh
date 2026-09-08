@@ -186,6 +186,10 @@ name=$1
 shift
 printf 'run %s: %s\n' "$name" "$*" >> "${QCTL_LOG:?}"
 case "$*" in
+	*journalctl*)
+		printf '2026-09-08T09:14:02 wgq-firewall: kill switch installed\n'
+		printf '2026-09-08T09:14:03 wg-tunnel[412]: up: peer \033[31mhostile\033[0m se-mma\n'
+		;;
 	*"latest-handshakes"*) printf 'tick 1000 988 1048576 524288 42 ok_peer=se-mma_dns=10.64.0.1\n' ;;
 	*"cat /run/wgq/state"*) printf 'ok peer=se-mma dns=10.64.0.1\n' ;;
 	*"cat /rw/config/wg/dns"*) exit 1 ;;
@@ -664,6 +668,29 @@ if env PATH="$WORK/bin:$PATH" sh "$TOP" work --once >"$WORK/out" 2>&1 \
 else
 	cat "$WORK/out"
 	fail "top --once went wrong"
+fi
+
+# 11a6f. logs: the merged journal, labeled by journald, escape-stripped
+# before it touches a terminal -- a log line is where a hostile qube
+# would put its escape sequence.
+LOGS=$(cd "$(dirname "$0")/.." && pwd)/wgq/dom0/wgq-logs
+if env PATH="$WORK/bin:$PATH" sh "$LOGS" work >"$WORK/out" 2>&1 \
+	&& grep -q 'zone work' "$WORK/out" \
+	&& grep -q 'wgq-firewall: kill switch installed' "$WORK/out" \
+	&& grep -q 'hostile' "$WORK/out" \
+	&& ! grep -q '\033' "$WORK/out"; then
+	ok "logs merges the journal and strips a hostile escape"
+else
+	cat "$WORK/out"
+	fail "logs went wrong"
+fi
+if env PATH="$WORK/bin:$PATH" sh "$LOGS" work --since 'yesterday; rm -rf /' >"$WORK/out" 2>&1; then
+	fail "a hostile --since value was accepted"
+elif grep -q 'unusable --since' "$WORK/out"; then
+	ok "a hostile --since value is refused before any qvm-run"
+else
+	cat "$WORK/out"
+	fail "--since refusal went wrong"
 fi
 
 # 11a7. The restart cycle: plan first, clients named as going dark, one

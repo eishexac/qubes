@@ -1,0 +1,92 @@
+#!/bin/sh
+#
+# wgq-logs - the zone's story, merged, one verb.
+#
+#     sudo wgq logs <zone> [-n N] [-f] [--since <expr>]
+#
+# What the debugging days typed a dozen times by hand
+# (qvm-run -u root sys-wgq-x 'journalctl -t wgq-firewall ...') with the
+# labels and ordering journald already does better than hand-stitching:
+# the firewall script's own lines, the tunnel unit, and the daemon that
+# runs the script, chronologically interleaved. -f follows live (one
+# stream, Ctrl-C leaves); everything a qube prints is stripped to
+# printing characters before it reaches the terminal -- a log line is
+# exactly where a hostile qube would put an escape sequence.
+
+set -eu
+
+PROG=${WGQ_PROG:-${0##*/}}
+case "$0" in */*) wgq_here=${0%/*} ;; *) wgq_here=. ;; esac
+# shellcheck source=dom0/msg.sh
+. "$wgq_here/msg.sh"
+
+usage() {
+	printf 'usage: %s <zone> [-n N] [-f] [--since <expr>]\n' "$PROG" >&2
+	exit 2
+}
+
+zone=''
+lines=100
+follow=0
+since=''
+while [ $# -gt 0 ]; do
+	case "$1" in
+		-f) follow=1 ;;
+		-n)
+			[ $# -ge 2 ] || usage
+			lines=$2
+			shift
+			;;
+		--since)
+			[ $# -ge 2 ] || usage
+			since=$2
+			shift
+			;;
+		-*) usage ;;
+		*)
+			[ -z "$zone" ] || usage
+			zone=$1
+			;;
+	esac
+	shift
+done
+[ -n "$zone" ] || usage
+case "$zone" in
+	*[!a-z0-9-]*) die "unusable zone name '$zone'" ;;
+esac
+case "$lines" in
+	'' | *[!0-9]*) die "-n expects a number" ;;
+esac
+# --since crosses into a command run in the qube: admit only the
+# characters journalctl's time grammar needs, nothing shell cares about
+case "$since" in
+	*[!A-Za-z0-9\ :+-]*) die "unusable --since value (letters, digits, space, colon, plus, minus)" ;;
+esac
+
+vpn="sys-wgq-$zone"
+[ "$zone" = wgq ] && vpn=sys-wgq
+qvm-check --quiet "sys-fw-$zone" 2>/dev/null || die "zone '$zone' does not exist"
+qvm-check --quiet --running "$vpn" 2>/dev/null \
+	|| die "$vpn is halted; its journal lives inside it (sudo wgq connect $zone)"
+
+is_ours() {
+	qvm-tags "$1" list 2>/dev/null | grep -qx created-by-wgq && return 0
+	case "$(qvm-prefs "$1" label 2>/dev/null)" in
+		wgq | wgq-*) return 0 ;;
+	esac
+	return 1
+}
+is_ours "$vpn" || die "$vpn was not created by wgq; not mine to read"
+
+colour=$(qvm-features "$vpn" wgq.color 2>/dev/null || :)
+cmd="journalctl -t wgq-firewall -u wg-tunnel -u qubes-firewall -o short-iso -n $lines"
+[ -n "$since" ] && cmd="$cmd --since '$since'"
+[ "$follow" -eq 1 ] && cmd="$cmd -f"
+
+printf '── %s ── the last %s lines, merged%s ──\n' \
+	"$(paint_to 1 "$colour" "zone $zone")" "$lines" \
+	"$([ "$follow" -eq 1 ] && printf ', following (Ctrl-C leaves)')"
+trap 'exit 0' INT TERM
+# printing characters, tab and newline survive; escapes do not
+qvm-run --no-gui --no-autostart --pass-io -u root -- "$vpn" "$cmd" \
+	| tr -d '\000-\010\013\014\016-\037'
