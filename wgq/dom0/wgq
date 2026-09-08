@@ -70,6 +70,7 @@ usage() {
 	printf '       %s <mgmt verb> ...           (servers provision peer firewall ...)\n' "$PROG" >&2
 	printf '       -z <zone> is accepted anywhere and always means the same thing\n' >&2
 	printf '       -n (--dry-run) prints the framed qvm-run and executes nothing\n' >&2
+	printf '       -V (--version) prints the installed version; -v is verbose where a verb has one\n' >&2
 	exit 2
 }
 
@@ -285,6 +286,13 @@ while [ $# -gt 0 ]; do
 			PANIC_ONE=1
 			shift 2
 			;;
+		-V | --version)
+			# Answered from the reviewed tree itself -- the same string
+			# the in-qube CLI prints, no qube started to ask. (-v is
+			# taken: verbose, on the verbs that have a wall to hide.)
+			printf 'wgq %s\n' "$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$wgq_here/../src/wgq/__init__.py" 2>/dev/null || printf unknown)"
+			exit 0
+			;;
 		-*) usage ;;
 		*) break ;;
 	esac
@@ -296,7 +304,7 @@ if [ $# -eq 0 ]; then
 	WGQ_PROG="$PROG tree" WGQ_HOME_HINT=1 export WGQ_PROG WGQ_HOME_HINT
 	exec "$wgq_here/wgq-tree"
 fi
-case "$1" in -h | --help | help) usage ;; esac
+case "$1" in help) usage ;; esac
 verb=$1
 
 if [ "$DRY" -eq 1 ]; then
