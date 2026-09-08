@@ -15,6 +15,7 @@ stderr, like every other machine interface in wgq.
     verify-probes.py exitip
     verify-probes.py dnscheck <resolver|system> [name]
     verify-probes.py killcheck <endpoint_ip> <endpoint_port>
+    verify-probes.py asn <ipv4>
 """
 
 import json
@@ -30,12 +31,12 @@ DNS_TIMEOUT = 3.0
 # -- raw DNS ----------------------------------------------------------------
 
 
-def build_query(name: str, tid: int) -> bytes:
+def build_query(name: str, tid: int, qtype: int = 1) -> bytes:
     header = struct.pack(">HHHHHH", tid, 0x0100, 1, 0, 0, 0)
     question = b"".join(
         bytes([len(label)]) + label.encode("ascii") for label in name.split(".")
     )
-    return header + question + b"\x00" + struct.pack(">HH", 1, 1)  # A, IN
+    return header + question + b"\x00" + struct.pack(">HH", qtype, 1)  # qtype, IN
 
 
 def skip_name(data: bytes, off: int) -> int:
@@ -159,6 +160,63 @@ def tcp_roundtrip(ip: str, port: int) -> bool:
         return True
 
 
+def parse_txt(data: bytes, tid: int) -> str:
+    """The first TXT character-string of a NOERROR answer, or ValueError."""
+    if len(data) < 12:
+        raise ValueError("short response")
+    rtid, flags, qdcount, ancount = struct.unpack(">HHHH", data[:8])
+    if rtid != tid:
+        raise ValueError("transaction id mismatch")
+    if not flags & 0x8000:
+        raise ValueError("not a response")
+    if flags & 0x000F:
+        raise ValueError(f"rcode {flags & 0x000F}")
+    off = 12
+    try:
+        for _ in range(qdcount):
+            off = skip_name(data, off) + 4
+        for _ in range(ancount):
+            off = skip_name(data, off)
+            rtype, _rclass, _ttl, rdlength = struct.unpack(">HHIH", data[off : off + 10])
+            off += 10
+            rdata = data[off : off + rdlength]
+            off += rdlength
+            if len(rdata) != rdlength:
+                raise ValueError("truncated rdata")
+            if rtype == 16 and rdata:  # TXT: one or more <len><bytes> strings
+                slen = rdata[0]
+                return rdata[1 : 1 + slen].decode("ascii", errors="replace")
+    except struct.error as exc:
+        raise ValueError(f"truncated response: {exc}") from None
+    raise ValueError("no TXT record")
+
+
+def asn_of(ip: str) -> dict:
+    """The autonomous-system number owning an IPv4 address, via Team
+    Cymru's DNS interface. A global fact about the address, so the
+    vantage does not matter -- what mattered was obtaining the address
+    from the right side, which the caller already did."""
+    octets = ip.split(".")
+    if len(octets) != 4 or not all(o.isdigit() for o in octets):
+        return {"ok": False, "error": f"not an IPv4 address: {ip}"}
+    qname = ".".join(reversed(octets)) + ".origin.asn.cymru.com"
+    tid = 0x5748
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(DNS_TIMEOUT)
+    try:
+        sock.sendto(build_query(qname, tid, qtype=16), (system_resolvers()[0], 53))
+        data, _ = sock.recvfrom(4096)
+        txt = parse_txt(data, tid)
+        asn = txt.split("|")[0].strip().split()[0]  # "23028 | 216.90.108.0/24 | ..."
+        if not asn.isdigit():
+            return {"ok": False, "error": f"unparseable Cymru answer: {txt!r}"}
+        return {"ok": True, "asn": asn}
+    except (OSError, ValueError, IndexError) as exc:
+        return {"ok": False, "error": str(exc)}
+    finally:
+        sock.close()
+
+
 STUN_COOKIE = 0x2112A442
 
 
@@ -260,6 +318,8 @@ def main(argv: list[str]) -> int:
     mode, rest = argv[0], argv[1:]
     if mode == "exitip":
         result = exit_ip()
+    elif mode == "asn":
+        result = asn_of(rest[0]) if rest else {"ok": False, "error": "asn needs an ip"}
     elif mode == "stun":
         # Bad argv degrades to a JSON error like every other failure --
         # this file's contract is one document on stdout, never a

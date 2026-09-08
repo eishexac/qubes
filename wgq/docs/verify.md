@@ -30,6 +30,11 @@ Five checks:
 1. The public address is the tunnel exit. **Needs an anchor** —
    `--provider mullvad`, `--exit-ip`, or `--clearnet-ip`. Without one it
    reports SKIP, because a check that cannot fail is worse than no check.
+1c. (wgq verify only) An advisory, not a gate: the exit's network
+   (autonomous system) is compared with your clearnet's, and a match
+   is flagged — the tunnel is sealed, but a same-ISP exit barely moves
+   your apparent origin, which is a traffic-correlation weakness in the
+   choice of server. Never fails the leak-tight verdict.
 1b. (wgq verify only) The UDP path exits where the TCP path does: a
    STUN binding must see the tunnel exit — the WebRTC-leak question
    answered as a proof. Clearnet match fails; no answer is an honest

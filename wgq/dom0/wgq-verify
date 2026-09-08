@@ -153,7 +153,8 @@ vpn_root() {
 passed=0
 failed=0
 skipped=0
-report() { # report <PASS|FAIL|SKIP> <n> <text>
+advised=0
+report() { # report <PASS|FAIL|SKIP|ADVISE> <n> <text>
 	case "$1" in
 		PASS)
 			passed=$((passed + 1))
@@ -166,6 +167,13 @@ report() { # report <PASS|FAIL|SKIP> <n> <text>
 		SKIP)
 			skipped=$((skipped + 1))
 			note "[$2] skip: $3"
+			;;
+		ADVISE)
+			# An advisory: reported, never part of the leak-tight
+			# verdict. A sealed tunnel to a weak-choice exit is still
+			# sealed; this is about the choice, not the seal.
+			advised=$((advised + 1))
+			warn "[$2] advisory: $3"
 			;;
 	esac
 }
@@ -239,6 +247,37 @@ else
 	report SKIP 1b "STUN sees $stun_ip (neither clearnet nor the check-1 exit; provider NAT can do this)"
 fi
 
+# -- check 1c: does the exit actually move your network origin? -------------
+#
+# A tunnel can be perfectly sealed and still barely change where you
+# appear to come from: if the exit is on your own ISP's network (same
+# autonomous system), an observer positioned there sees both ends and
+# correlation is trivial. Not a leak -- the seal holds -- but a real
+# traffic-correlation weakness in the CHOICE of exit, so it is an
+# advisory, never a pass/fail. Both AS lookups run in wgq-mgmt (the
+# AS-of-an-IP fact is global; the addresses were gathered from the
+# right sides already). Team Cymru over plaintext DNS is unauthed, so
+# a hostile resolver could lie -- fine for an advisory.
+
+asn_of() { # asn_of <ip> -> AS number via the pushed probe, in mgmt
+	qvm-run --no-gui --pass-io -u user -- "$MGMT" "python3 /tmp/wgq-probes.py asn $1" 2>/dev/null \
+		| jfield asn | sanitize
+}
+if [ -n "$exit_ip" ] && [ -n "$clearnet" ]; then
+	qvm-run --no-gui --pass-io -u user -- "$MGMT" 'cat > /tmp/wgq-probes.py' <"$PROBES" 2>/dev/null || :
+	as_clear=$(asn_of "$clearnet")
+	as_exit=$(asn_of "$exit_ip")
+	if [ -z "$as_clear" ] || [ -z "$as_exit" ]; then
+		report SKIP 1c "could not resolve both AS numbers (Team Cymru DNS); origin unchecked"
+	elif [ "$as_clear" = "$as_exit" ]; then
+		report ADVISE 1c "exit is on the SAME network as your clearnet (AS$as_exit): the tunnel is sealed, but your apparent origin barely moved -- pick an exit on a different ISP for correlation resistance"
+	else
+		report PASS 1c "exit AS$as_exit differs from your clearnet AS$as_clear (origin genuinely moved)"
+	fi
+else
+	report SKIP 1c "no clearnet anchor; origin unchecked (pass --clearnet-ip)"
+fi
+
 # -- check 2: DNS is pinned -------------------------------------------------
 
 sys_ok=$(probe dnscheck system | jfield ok)
@@ -310,8 +349,10 @@ fi
 report SKIP 4 "upstream pcap audit is not orchestrated yet; see test/verify.sh for the manual procedure"
 
 printf '\n' >&2
+adv_tail=""
+[ "$advised" -gt 0 ] && adv_tail=", $advised advisory (not a leak; see above)"
 if [ "$failed" -eq 0 ]; then
-	ok "leak-tight: yes ($passed passed, $skipped skipped)"
+	ok "leak-tight: yes ($passed passed, $skipped skipped$adv_tail)"
 	exit 0
 fi
-die "leak-tight: NO ($failed failed, $passed passed, $skipped skipped)"
+die "leak-tight: NO ($failed failed, $passed passed, $skipped skipped$adv_tail)"
