@@ -24,6 +24,9 @@ labels: ["wgq"]
 $ sudo wgq ...
 ```
 
+<!-- Redact the `clearnet` line from verify output: that address is
+     YOURS. Everything else verify prints is the provider's. -->
+
 ## Raw output, untidied
 
 ```console
